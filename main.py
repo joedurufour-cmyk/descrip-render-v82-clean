@@ -348,6 +348,14 @@ async def generate_v2(
         except (ValueError, TypeError):
             logger.warning(f"Modo inválido '{modo}', usando SD por defecto")
             modo_enum = Resolucion.SD
+        
+        # Validar categoría con fallback
+        try:
+            cat_enum = CategoriaEstetica(categoria) if categoria else CategoriaEstetica.CINE
+        except (ValueError, TypeError):
+            logger.warning(f"Categoría inválida '{categoria}', usando CINE por defecto")
+            cat_enum = CategoriaEstetica.CINE
+        
         overrides = None
         if overrides_json:
             try:
@@ -355,6 +363,20 @@ async def generate_v2(
             except ValidationError as e:
                 logger.error(f"Overrides validation error: {e}")
                 raise HTTPException(status_code=422, detail=f"Overrides inválidos: {str(e)}")
+        
+        # Si se proporcionó categoría como parámetro y no hay override de categoría, usarla
+        if categoria and (not overrides or not overrides.categoria):
+            if not overrides:
+                overrides = OverridesTexto(categoria=cat_enum)
+            else:
+                overrides.categoria = cat_enum
+        
+        # Si se proporcionó AR como parámetro y no hay override de AR, usarlo
+        if ar and ar != "1:1" and (not overrides or not overrides.ar):
+            if not overrides:
+                overrides = OverridesTexto(ar=ar)
+            else:
+                overrides.ar = ar
 
         # --- Flujo con imagen ---
         if image and image.filename:
