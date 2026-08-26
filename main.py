@@ -29,6 +29,7 @@ from gemini_orquestador import (
     construir_payload_vision, procesar_respuesta_vision,
     construir_payload_texto, procesar_respuesta_texto,
     SYSTEM_INSTRUCTION, SYSTEM_INSTRUCTION_VISION,
+    _limpiar_schema_gemini,
 )
 
 # Legacy models para compatibilidad
@@ -103,28 +104,39 @@ def mapear_transform_a_overrides(transform: TransformRequest) -> OverridesTexto:
     )
 
 
-def _img_to_base64(upload_file: UploadFile) -> str:
-    """Convierte UploadFile a base64 JPEG."""
+def _img_to_bytes(upload_file: UploadFile) -> bytes:
+    """Convierte UploadFile a bytes JPEG."""
     image_bytes = upload_file.file.read()
     pil_image = Image.open(io.BytesIO(image_bytes))
     buffered = io.BytesIO()
     pil_image.save(buffered, format="JPEG")
-    return base64.b64encode(buffered.getvalue()).decode()
+    return buffered.getvalue()
 
 
-def _call_gemini_vision(img_base64: str) -> str:
+def _call_gemini_vision(image_bytes: bytes) -> str:
     """Etapa 0: Gemini describe imagen → JSON DescripcionVisual."""
     import traceback
+    from google.genai import types
     try:
-        payload = construir_payload_vision(img_base64, mime_type="image/jpeg")
+        schema = _limpiar_schema_gemini(DescripcionVisual.model_json_schema())
+        
+        # Crear contenido multimodal con bytes directos
+        image_part = types.Part.from_bytes(data=image_bytes, mime_type="image/jpeg")
+        text_part = types.Part.from_text(text="Describe esta imagen según el schema provisto.")
+        
+        content = types.Content(
+            role="user",
+            parts=[image_part, text_part]
+        )
+        
         logger.info(f"Calling Gemini vision with model: {GEMINI_MODEL}")
         response = gemini_client.models.generate_content(
             model=GEMINI_MODEL,
-            contents=payload["contents"],
-            config={
-                "response_mime_type": "application/json",
-                "response_schema": payload["generation_config"]["response_schema"],
-            }
+            contents=[content],
+            config=types.GenerateContentConfig(
+                response_mime_type="application/json",
+                response_schema=schema,
+            )
         )
         return response.text
     except Exception as e:
@@ -274,8 +286,8 @@ async def generate_legacy(
 
     # === ETAPA 0: VISIÓN ===
     try:
-        img_base64 = _img_to_base64(image)
-        vision_json = _call_gemini_vision(img_base64)
+        img_bytes = _img_to_bytes(image)
+        vision_json = _call_gemini_vision(img_bytes)
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error en visión: {str(e)}")
 
@@ -298,8 +310,8 @@ async def vision_pure(
         raise HTTPException(status_code=503, detail="Gemini API no configurada.")
 
     try:
-        img_base64 = _img_to_base64(image)
-        vision_json = _call_gemini_vision(img_base64)
+        img_bytes = _img_to_bytes(image)
+        vision_json = _call_gemini_vision(img_bytes)
         return json.loads(vision_json)
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
@@ -344,8 +356,8 @@ async def generate_v2(
         if image and image.filename:
             logger.info("Processing image flow")
             try:
-                img_base64 = _img_to_base64(image)
-                vision_data = _call_gemini_vision(img_base64)
+                img_bytes = _img_to_bytes(image)
+                vision_data = _call_gemini_vision(img_bytes)
             except Exception as e:
                 logger.error(f"Vision error: {e}")
                 raise HTTPException(status_code=500, detail=f"Error en visión: {str(e)}")
