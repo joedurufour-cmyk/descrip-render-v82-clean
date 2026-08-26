@@ -628,25 +628,11 @@ def construir_prompt(sol: SolicitudPrompt) -> ResultadoPrompt:
             "stylize 200-300 (calidad anime inferior)."
         )
 
-    # --- construir descripción física automáticamente si hay jerarquía ---
-    desc_fisica_auto = construir_descripcion_fisica(
-        nivel=sol.nivel_abdominal,
-        proporcion=sol.proporcion,
-        genero=sol.genero,
-        tags=sol.tags_fisico,
-        packs=sol.packs,
-        low_waist=sol.low_waist,
-    )
-    
-    # Combinar rasgos_fisicos con descripción física automática
-    rasgos_combinados = sol.rasgos_fisicos or ""
-    if desc_fisica_auto:
-        if rasgos_combinados:
-            rasgos_combinados = f"{rasgos_combinados}, {desc_fisica_auto}"
-        else:
-            rasgos_combinados = desc_fisica_auto
-
     # --- construir bloques en orden front-loading obligatorio ---
+    # NOTA: la descripción física ya está incluida en sol.rasgos_fisicos
+    # por fusionar_vision_y_overrides() (flujo imagen) o construir_payload_texto()
+    rasgos_combinados = sol.rasgos_fisicos or ""
+    
     bloques = [
         f"{sol.sujeto}, {rasgos_combinados}" if rasgos_combinados else sol.sujeto,
         sol.accion_estado,
