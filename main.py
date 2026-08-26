@@ -72,7 +72,7 @@ else:
 # HELPERS
 # ═══════════════════════════════════════════════════════════
 
-def mapear_transform_a_overrides(transform: TransformRequest) -> OverridesTexto:
+def mapear_transform_a_overrides(transform: TransformRequest, ar: str = "1:1") -> OverridesTexto:
     """Mapea el viejo TransformRequest a OverridesTexto para compatibilidad."""
     categoria_map = {
         "photorealistic": CategoriaEstetica.FOTOREALISMO_RETRATO,
@@ -101,6 +101,7 @@ def mapear_transform_a_overrides(transform: TransformRequest) -> OverridesTexto:
         rasgos_fisicos=", ".join(rasgos) if rasgos else None,
         iluminacion_atmosfera=transform.lighting_drama,
         accion_estado=transform.pose_variation,
+        ar=ar,
     )
 
 
@@ -257,7 +258,8 @@ async def debug_info():
 @app.post("/generate", response_model=GenerationResponse)
 async def generate_legacy(
     image: UploadFile = File(..., description="Imagen fuente"),
-    transform_json: str = Form(..., description="JSON stringificado de TransformRequest")
+    transform_json: str = Form(..., description="JSON stringificado de TransformRequest"),
+    ar: str = Form("1:1", description="Aspect ratio (ej. 1:1, 16:9, 9:16)"),
 ):
     """
     Endpoint LEGACY — compatible con APK existente.
@@ -271,6 +273,8 @@ async def generate_legacy(
         transform = TransformRequest.model_validate_json(transform_json)
     except ValidationError as e:
         raise HTTPException(status_code=422, detail=str(e))
+    
+    logger.info(f"Legacy endpoint: physique={transform.physique.value}, ar={ar}")
 
     # Validar imagen
     allowed = {"image/jpeg", "image/jpg", "image/png", "image/webp"}
@@ -293,7 +297,7 @@ async def generate_legacy(
 
     # === FUSIÓN + ETAPA 2 ===
     try:
-        overrides = mapear_transform_a_overrides(transform)
+        overrides = mapear_transform_a_overrides(transform, ar=ar)
         resultado = procesar_respuesta_vision(vision_json, overrides=overrides)
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error construyendo prompt: {str(e)}")
