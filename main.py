@@ -73,20 +73,15 @@ else:
 # ═══════════════════════════════════════════════════════════
 
 def mapear_transform_a_overrides(transform: TransformRequest, ar: str = "1:1") -> OverridesTexto:
-    """Mapea el viejo TransformRequest a OverridesTexto para compatibilidad."""
-    categoria_map = {
-        "photorealistic": CategoriaEstetica.FOTOREALISMO_RETRATO,
-        "cinematic": CategoriaEstetica.CINE,
-        "anime": CategoriaEstetica.ANIME_MANGA,
-        "oil_painting": CategoriaEstetica.PINTURA_CLASICA,
-        "fantasy": CategoriaEstetica.CONCEPTUAL_FANTASIA,
-        "editorial": CategoriaEstetica.EDITORIAL_MODA,
-        "cgi": CategoriaEstetica.MODELADO_3D_CGI,
-        "cyberpunk": CategoriaEstetica.CYBERPUNK_SCIFI,
-        "surreal": CategoriaEstetica.EXPERIMENTAL_SURREALISMO,
-        "vintage": CategoriaEstetica.VINTAGE_ANALOGICA,
-    }
-    categoria = categoria_map.get(transform.physique.value, CategoriaEstetica.CINE)
+    """Mapea el viejo TransformRequest a OverridesTexto para compatibilidad.
+
+    NOTA: TransformRequest.physique (PhysiqueLevel: lean/defined/ultra) describe
+    nivel de definición muscular, no categoría estética — no existe en el payload
+    legacy ninguna señal de categoría (photorealistic/cinematic/anime/...), así
+    que se usa CINE como default explícito en vez de un mapeo que nunca podía
+    resolver (bug previo: buscaba por physique.value en un dict de estilos).
+    """
+    categoria = CategoriaEstetica.CINE
 
     rasgos = []
     if transform.packs:
@@ -99,15 +94,16 @@ def mapear_transform_a_overrides(transform: TransformRequest, ar: str = "1:1") -
     return OverridesTexto(
         categoria=categoria,
         rasgos_fisicos=", ".join(rasgos) if rasgos else None,
-        iluminacion_atmosfera=transform.lighting_drama,
-        accion_estado=transform.pose_variation,
+        iluminacion_atmosfera=(
+            "dramatic sculptural lighting, hard rim light, deep shadow modeling"
+            if transform.lighting_drama else None
+        ),
         ar=ar,
     )
 
 
-def _img_to_bytes(upload_file: UploadFile) -> bytes:
-    """Convierte UploadFile a bytes JPEG."""
-    image_bytes = upload_file.file.read()
+def _img_to_bytes(image_bytes: bytes) -> bytes:
+    """Convierte bytes de imagen ya leídos a bytes JPEG."""
     pil_image = Image.open(io.BytesIO(image_bytes))
     buffered = io.BytesIO()
     pil_image.save(buffered, format="JPEG")
@@ -124,17 +120,18 @@ def _call_gemini_vision(image_bytes: bytes) -> str:
         # Crear contenido multimodal con bytes directos
         image_part = types.Part.from_bytes(data=image_bytes, mime_type="image/jpeg")
         text_part = types.Part.from_text(text="Describe esta imagen según el schema provisto.")
-        
+
         content = types.Content(
             role="user",
             parts=[image_part, text_part]
         )
-        
+
         logger.info(f"Calling Gemini vision with model: {GEMINI_MODEL}")
         response = gemini_client.models.generate_content(
             model=GEMINI_MODEL,
             contents=[content],
             config=types.GenerateContentConfig(
+                system_instruction=SYSTEM_INSTRUCTION_VISION,
                 response_mime_type="application/json",
                 response_schema=schema,
             )
@@ -156,6 +153,7 @@ def _call_gemini_texto(idea: str) -> str:
             model=GEMINI_MODEL,
             contents=payload["contents"],
             config={
+                "system_instruction": SYSTEM_INSTRUCTION,
                 "response_mime_type": "application/json",
                 "response_schema": payload["generation_config"]["response_schema"],
             }
@@ -168,15 +166,18 @@ def _call_gemini_texto(idea: str) -> str:
 
 
 def _resultado_to_legacy(resultado: ResultadoPrompt, transform: TransformRequest) -> GenerationResponse:
-    """Mapea ResultadoPrompt al formato legacy del APK."""
+    """Mapea ResultadoPrompt (motor v2) al formato legacy del APK.
+
+    NOTA: GeneratedPrompt/SourceAnalysis en models.py usan el esquema de salida
+    del viejo prompt_builder.py (5 prompts autoevaluados por Gemini con
+    preservation_score/visual_power_score). El motor determinístico v2 no
+    genera múltiples candidatos ni autoevalúa: aquí se produce un único
+    GeneratedPrompt y los scores quedan fijos como placeholder porque no hay
+    una puntuación equivalente que calcular.
+    """
     generated = GeneratedPrompt(
-        prompt=resultado.prompt_final,
-        style_preset=transform.physique.value,
-        aspect_ratio=resultado.parametros.ar,
-        stylize=resultado.parametros.stylize,
-        chaos=resultado.parametros.chaos,
-        raw=resultado.parametros.raw,
-        version=resultado.parametros.v.value,
+        style_label=resultado.perfil_aplicado.value,
+        prompt_text=resultado.prompt_final,
         parameters={
             "ar": resultado.parametros.ar,
             "stylize": resultado.parametros.stylize,
@@ -186,15 +187,21 @@ def _resultado_to_legacy(resultado: ResultadoPrompt, transform: TransformRequest
             "v": resultado.parametros.v.value,
             "warnings": resultado.warnings,
         },
-        score={"abs_quality": 0, "style_match": 0, "overall": 0}
+        preservation_score=1.0,
+        visual_power_score=1.0,
     )
     return GenerationResponse(
         source_analysis=SourceAnalysis(
             subject=resultado.prompt_final[:100],
-            physique_description="",
-            style_analysis="",
-            locked_attributes=[],
-            mutable_attributes=[]
+            identity="",
+            physique_original=transform.physique.value,
+            pose="",
+            expression="",
+            clothing="",
+            environment="",
+            camera="",
+            lighting="",
+            style=resultado.perfil_aplicado.value,
         ),
         locked_attributes=[],
         mutable_attributes=[],
@@ -290,7 +297,7 @@ async def generate_legacy(
 
     # === ETAPA 0: VISIÓN ===
     try:
-        img_bytes = _img_to_bytes(image)
+        img_bytes = _img_to_bytes(image_bytes)
         vision_json = _call_gemini_vision(img_bytes)
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error en visión: {str(e)}")
@@ -314,7 +321,8 @@ async def vision_pure(
         raise HTTPException(status_code=503, detail="Gemini API no configurada.")
 
     try:
-        img_bytes = _img_to_bytes(image)
+        image_bytes = await image.read()
+        img_bytes = _img_to_bytes(image_bytes)
         vision_json = _call_gemini_vision(img_bytes)
         return json.loads(vision_json)
     except Exception as e:
@@ -382,19 +390,24 @@ async def generate_v2(
         if image and image.filename:
             logger.info("Processing image flow")
             try:
-                img_bytes = _img_to_bytes(image)
+                image_bytes = await image.read()
+                img_bytes = _img_to_bytes(image_bytes)
                 vision_data = _call_gemini_vision(img_bytes)
             except Exception as e:
                 logger.error(f"Vision error: {e}")
                 raise HTTPException(status_code=500, detail=f"Error en visión: {str(e)}")
 
+            vision_dict = json.loads(vision_data)
+
             if n_estilos > 1:
                 import random
-                vision = DescripcionVisual.model_validate_json(vision_data)
+                vision = DescripcionVisual.model_validate(vision_dict)
                 cats = random.sample(list(CategoriaEstetica), min(n_estilos, len(CategoriaEstetica)))
                 resultados = regenerar_en_estilos(vision, cats, overrides, modo=modo_enum)
                 return {
                     "modo": "multi-estilo",
+                    "source_analysis": vision_dict,
+                    "vision_raw": vision_dict,
                     "resultados": {
                         k.value: {
                             "prompt": v.prompt_final,
@@ -408,6 +421,8 @@ async def generate_v2(
                 resultado = procesar_respuesta_vision(vision_data, overrides, modo=modo_enum)
                 return {
                     "modo": "single",
+                    "source_analysis": vision_dict,
+                    "vision_raw": vision_dict,
                     "prompt": resultado.prompt_final,
                     "parametros": resultado.parametros.model_dump(),
                     "warnings": resultado.warnings,

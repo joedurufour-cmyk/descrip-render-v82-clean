@@ -5,7 +5,6 @@ visión+overrides, y regeneración multi-estilo.
 """
 
 import sys
-sys.path.insert(0, "/root/.openclaw/workspace/descrip-render-v8.1")
 
 from mj_engine import (
     SolicitudPrompt,
@@ -230,12 +229,19 @@ print("P OK ->", r_ocr.prompt_final)
 # ═══════════════════════════════════════════════════════════
 # RESUMEN
 # ═══════════════════════════════════════════════════════════
-print("\n" + "="*60)
-if fallos:
-    print(f"❌ FALLARON {len(fallos)} TESTS:")
-    for f in fallos:
-        print(f"  - {f}")
-    sys.exit(1)
-else:
-    print("✅ TODOS LOS TESTS PASARON (17/17)")
-    sys.exit(0)
+
+def test_motor_determinista():
+    """Entry point compatible con pytest: falla si algún check() anterior falló."""
+    assert not fallos, "Fallos:\n" + "\n".join(f"  - {f}" for f in fallos)
+
+
+if __name__ == "__main__":
+    print("\n" + "="*60)
+    if fallos:
+        print(f"❌ FALLARON {len(fallos)} TESTS:")
+        for f in fallos:
+            print(f"  - {f}")
+        sys.exit(1)
+    else:
+        print("✅ TODOS LOS TESTS PASARON (17/17)")
+        sys.exit(0)

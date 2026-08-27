@@ -330,6 +330,15 @@ class ParametrosMJ(BaseModel):
     no: List[str] = Field(default_factory=list)
     warnings: List[str] = Field(default_factory=list, exclude=False)
 
+    def _agregar_warning(self, mensaje: str) -> None:
+        """Append idempotente. Pydantic v2 vuelve a ejecutar los
+        model_validator(mode="after") de este modelo cada vez que la instancia
+        se anida como campo de OTRO modelo (ej. ResultadoPrompt.parametros),
+        aunque no se reconstruya vía __init__. Sin esta guarda, cada anidación
+        duplicaría el mismo warning en self.warnings."""
+        if mensaje not in self.warnings:
+            self.warnings.append(mensaje)
+
     # ---- doc: "Trampa HD vs SD" — ar máx 4:1 en hd, 14:1 en sd ---
     @model_validator(mode="after")
     def _validar_resolucion_ar(self) -> "ParametrosMJ":
@@ -339,7 +348,7 @@ class ParametrosMJ(BaseModel):
         except Exception:
             ratio = 1.0
         if self.resolucion == Resolucion.HD and ratio > 4.0:
-            self.warnings.append(
+            self._agregar_warning(
                 f"--ar {self.ar} excede 4:1 permitido en modo HD (doc: 'techo de "
                 f"procesamiento inquebrantable'). Se recomienda renderizar en SD "
                 f"(hasta 14:1) y reservar HD como export terminal."
@@ -350,7 +359,7 @@ class ParametrosMJ(BaseModel):
     @model_validator(mode="after")
     def _validar_niji_exclusivo(self) -> "ParametrosMJ":
         if self.v == ModeloMJ.NIJI_7 and (self.stylize != 100 or self.raw or self.exp > 0):
-            self.warnings.append(
+            self._agregar_warning(
                 "Niji 7 es una familia de modelo independiente: los parámetros "
                 "estéticos ajustados para V8.2 (stylize/raw/exp) no tienen "
                 "interpolación nativa garantizada; validar visualmente."
@@ -361,7 +370,7 @@ class ParametrosMJ(BaseModel):
     @model_validator(mode="after")
     def _validar_exp_vs_stylize(self) -> "ParametrosMJ":
         if self.exp >= 25:
-            self.warnings.append(
+            self._agregar_warning(
                 f"--exp {self.exp} ≥25: umbral de sobreescritura (doc: 'punto de "
                 f"quiebre crítico 25-50'). Empieza a suprimir --stylize "
                 f"{self.stylize}. Para determinismo profesional, exp<25."
@@ -372,7 +381,7 @@ class ParametrosMJ(BaseModel):
     @model_validator(mode="after")
     def _validar_raw_vs_weird(self) -> "ParametrosMJ":
         if self.raw and self.weird > 0:
-            self.warnings.append(
+            self._agregar_warning(
                 "--raw + --weird activos simultáneamente: raw fuerza apego "
                 "literal mientras weird rompe lógica semántica/anatómica. "
                 "Combinación válida solo si la intención es fricción deliberada; "
