@@ -213,7 +213,11 @@ check(lote[CategoriaEstetica.CONCEPTUAL_FANTASIA].parametros.stylize >= 700, "O:
 check(lote[CategoriaEstetica.ANIME_MANGA].modelo_efectivo == ModeloMJ.NIJI_7, "O: anime en lote debe enrutar a niji")
 print("O OK -> lote generado:", {k.value: v.prompt_final[:60]+"..." for k, v in lote.items()})
 
-# --- Caso P: OCR detectado fuerza raw igual que texto manual ---
+# --- Caso P: OCR detectado NO se aplica solo (riesgo de alucinación) ---
+# texto_detectado_ocr es solo informativo (vive en source_analysis/vision_raw
+# para que el usuario lo revise) — nunca se cuela automáticamente al prompt,
+# porque una lectura de OCR alucinada forzaría --raw y un letrero falso en
+# la imagen. Solo el override EXPLÍCITO del usuario debe aplicarlo.
 vision_ocr = DescripcionVisual(
     sujeto_detectado="Cartel de concierto",
     contexto_detectado="pared de ladrillo en callejón",
@@ -222,9 +226,17 @@ vision_ocr = DescripcionVisual(
 )
 sol_ocr = fusionar_vision_y_overrides(vision_ocr)
 r_ocr = construir_prompt(sol_ocr)
-check(r_ocr.parametros.raw is True, "P: OCR detectado debe forzar raw igual que texto manual")
-check('"LIVE TONIGHT"' in r_ocr.prompt_final, "P: OCR debe aparecer entre comillas en prompt")
+check(r_ocr.parametros.raw is False, "P: OCR detectado sin override NO debe forzar raw")
+check("LIVE TONIGHT" not in r_ocr.prompt_final, "P: OCR detectado sin override NO debe aparecer en el prompt")
 print("P OK ->", r_ocr.prompt_final)
+
+# --- Caso P2: override explícito de texto_incrustado sí fuerza raw ---
+ov_texto = OverridesTexto(texto_incrustado="LIVE TONIGHT")
+sol_ocr2 = fusionar_vision_y_overrides(vision_ocr, ov_texto)
+r_ocr2 = construir_prompt(sol_ocr2)
+check(r_ocr2.parametros.raw is True, "P2: override explícito de texto SÍ debe forzar raw")
+check('"LIVE TONIGHT"' in r_ocr2.prompt_final, "P2: texto debe aparecer entre comillas cuando es override explícito")
+print("P2 OK ->", r_ocr2.prompt_final)
 
 # ═══════════════════════════════════════════════════════════
 # RESUMEN

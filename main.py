@@ -8,6 +8,7 @@ import os
 import json
 import base64
 import logging
+import random
 from typing import Optional
 from fastapi import FastAPI, File, UploadFile, Form, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
@@ -188,6 +189,24 @@ def _call_gemini_texto(idea: str) -> str:
         logger.error(f"Gemini text error: {e}")
         logger.error(traceback.format_exc())
         raise
+
+
+def _categorias_para_multi_estilo(
+    overrides: Optional[OverridesTexto], cat_enum: CategoriaEstetica, n_estilos: int
+) -> list:
+    """Categorías a usar en el flujo 'una imagen → N estilos'.
+
+    La categoría que el usuario eligió en la UI SIEMPRE va primera e
+    incluida. Antes esto se armaba con random.sample() sobre las 10
+    categorías completas sin ninguna relación con la selección del usuario
+    — con 5 variantes pedidas, era perfectamente posible (y frecuente) que
+    la categoría elegida no apareciera en ninguna de las 5, y cuando sí
+    aparecía, no había garantía de que fuera la primera en mostrarse.
+    """
+    seleccionada = overrides.categoria if overrides and overrides.categoria else cat_enum
+    otras = [c for c in CategoriaEstetica if c != seleccionada]
+    n_otras = min(max(n_estilos - 1, 0), len(otras))
+    return [seleccionada] + random.sample(otras, n_otras)
 
 
 def _resultado_to_legacy(resultado: ResultadoPrompt, transform: TransformRequest) -> GenerationResponse:
@@ -425,9 +444,8 @@ async def generate_v2(
             vision_dict = json.loads(vision_data)
 
             if n_estilos > 1:
-                import random
                 vision = DescripcionVisual.model_validate(vision_dict)
-                cats = random.sample(list(CategoriaEstetica), min(n_estilos, len(CategoriaEstetica)))
+                cats = _categorias_para_multi_estilo(overrides, cat_enum, n_estilos)
                 resultados = regenerar_en_estilos(vision, cats, overrides, modo=modo_enum)
                 return {
                     "modo": "multi-estilo",
@@ -478,8 +496,7 @@ async def generate_v2(
             logger.info("Processing vision_json flow")
             if n_estilos > 1:
                 vision = DescripcionVisual.model_validate_json(vision_json)
-                import random
-                cats = random.sample(list(CategoriaEstetica), min(n_estilos, len(CategoriaEstetica)))
+                cats = _categorias_para_multi_estilo(overrides, cat_enum, n_estilos)
                 resultados = regenerar_en_estilos(vision, cats, overrides, modo=modo_enum)
                 return {
                     "modo": "multi-estilo",
