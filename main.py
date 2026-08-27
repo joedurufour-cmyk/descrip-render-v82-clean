@@ -32,6 +32,7 @@ from gemini_orquestador import (
     construir_payload_vision, procesar_respuesta_vision,
     construir_payload_texto, procesar_respuesta_texto,
     SYSTEM_INSTRUCTION, SYSTEM_INSTRUCTION_VISION,
+    construir_instruccion_vision,
     _limpiar_schema_gemini,
 )
 
@@ -136,13 +137,19 @@ def _generate_content_con_reintentos(max_intentos: int = 3, **kwargs):
             time.sleep(espera)
 
 
-def _call_gemini_vision(image_bytes: bytes) -> str:
-    """Etapa 0: Gemini describe imagen → JSON DescripcionVisual."""
+def _call_gemini_vision(image_bytes: bytes, genero_objetivo: Optional[str] = None) -> str:
+    """Etapa 0: Gemini describe imagen → JSON DescripcionVisual.
+
+    genero_objetivo (opcional): si el usuario eligió un chip de "Género" en
+    la Jerarquía Física, se le pide a Gemini que reinterprete sujeto/rasgos
+    con esa presentación en esta misma llamada — ver construir_instruccion_
+    vision() en gemini_orquestador.py para el porqué de este enfoque en vez
+    de un reemplazo de palabras después."""
     import traceback
     from google.genai import types
     try:
         schema = _limpiar_schema_gemini(DescripcionVisual.model_json_schema())
-        
+
         # Crear contenido multimodal con bytes directos
         image_part = types.Part.from_bytes(data=image_bytes, mime_type="image/jpeg")
         text_part = types.Part.from_text(text="Describe esta imagen según el schema provisto.")
@@ -152,12 +159,13 @@ def _call_gemini_vision(image_bytes: bytes) -> str:
             parts=[image_part, text_part]
         )
 
-        logger.info(f"Calling Gemini vision with model: {GEMINI_MODEL}")
+        instruccion = construir_instruccion_vision(genero_objetivo)
+        logger.info(f"Calling Gemini vision with model: {GEMINI_MODEL} (genero_objetivo={genero_objetivo})")
         response = _generate_content_con_reintentos(
             model=GEMINI_MODEL,
             contents=[content],
             config=types.GenerateContentConfig(
-                system_instruction=SYSTEM_INSTRUCTION_VISION,
+                system_instruction=instruccion,
                 response_mime_type="application/json",
                 response_schema=schema,
             )
@@ -433,10 +441,11 @@ async def generate_v2(
         # --- Flujo con imagen ---
         if image and image.filename:
             logger.info("Processing image flow")
+            genero_objetivo = overrides.genero.value if overrides and overrides.genero else None
             try:
                 image_bytes = await image.read()
                 img_bytes = _img_to_bytes(image_bytes)
-                vision_data = _call_gemini_vision(img_bytes)
+                vision_data = _call_gemini_vision(img_bytes, genero_objetivo=genero_objetivo)
             except Exception as e:
                 logger.error(f"Vision error: {e}")
                 raise HTTPException(status_code=500, detail=f"Error en visión: {str(e)}")

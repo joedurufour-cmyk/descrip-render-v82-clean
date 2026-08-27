@@ -174,12 +174,19 @@ def construir_descripcion_fisica(
     # Low waist (pants bajos que exponen abdominales)
     if low_waist:
         partes.append("low-rise pants exposing lower abdominals, visible iliac furrows")
-    
-    # Ajuste por género
-    if genero == GeneroFisico.FEMENINO:
-        # Asegurar que la terminología sea femenina
-        partes = [p.replace("his ", "her ").replace("male ", "female ") for p in partes]
-    
+
+    # NOTA: la reinterpretación de género (chip "Género" de la UI) NO se
+    # hace acá. Antes había un reemplazo de palabras (.replace("his ", "her "))
+    # que nunca tuvo efecto real — ninguna cadena de TERMINOLOGIA_ABDOMINAL/
+    # TERMINOLOGIA_PROPORCION/TAGS_FISICO contiene esas palabras en inglés,
+    # y Masculino/Andrógino no tenían ningún manejo. Adaptar el género es un
+    # trabajo de lenguaje natural sobre prosa libre (sujeto/rasgos_fisicos
+    # detectados por visión, en español), así que ahora se le pide
+    # directamente a Gemini en la llamada de visión — ver
+    # construir_instruccion_vision() en gemini_orquestador.py y su uso en
+    # main.py::_call_gemini_vision(). `genero` sigue como parámetro acá por
+    # si en el futuro se agregan tags físicos con lenguaje de género propio.
+
     return ", ".join(partes) if partes else ""
 
 
