@@ -99,12 +99,20 @@ TERMINOLOGIA_ABDOMINAL = {
     NivelAbdominal.A8: "hypertrophic abdominal blocks, striated muscle fibers, deep separation",
 }
 
-# Terminología adicional por perfil de proporción
+# Terminología adicional por perfil de proporción.
+# NOTA: ningún valor debe nombrar un medio/estilo artístico (anime, óleo,
+# foto, 3D...) — la Jerarquía Física es un eje independiente de la Categoría
+# Estética (categoria/CategoriaEstetica) y se combina con cualquiera de las
+# 10 categorías, incluida regenerar_en_estilos() (una imagen → N estilos).
+# EXUBERANT_ANIME antes decía "anime physique" literal, lo que se colaba en
+# TODAS las categorías destino (fotorrealismo, pintura clásica, etc.) sin
+# importar cuál se hubiera elegido — se mantiene la intención (proporciones
+# hiper-musculosas y exageradas) sin el término de estilo.
 TERMINOLOGIA_PROPORCION = {
     PerfilProporcion.ATHLETIC: "lean functional physique, low body fat",
     PerfilProporcion.HEROIC: "powerful heroic proportions, broad shoulders narrow waist",
     PerfilProporcion.AMAZON: "strong feminine physique, powerful lower body, defined core",
-    PerfilProporcion.EXUBERANT_ANIME: "hyper-muscular anime physique, exaggerated proportions, extreme vascularity",
+    PerfilProporcion.EXUBERANT_ANIME: "hyper-muscular exuberant physique, extremely exaggerated proportions, extreme vascularity",
 }
 
 # Tags de físico adicionales que se pueden combinar
