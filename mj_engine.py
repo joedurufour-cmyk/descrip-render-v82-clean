@@ -644,7 +644,14 @@ class ResultadoPrompt(BaseModel):
 #    [Medio/Estilo] + [Lente/Ángulo] + [Parámetros]
 # ═══════════════════════════════════════════════════════════
 
-LIMITE_PALABRAS_SEGURO = 70   # doc: 60-80 palabras antes de activar Prompt Shortener
+LIMITE_PALABRAS_SEGURO = 100  # doc: 60-80 palabras antes de activar Prompt Shortener;
+# subido a 100 a pedido explícito del usuario para preservar más detalle
+# secundario (acción/contexto/iluminación/lente) en descripciones largas.
+# medio_estilo, jerarquía física (front-loaded) y texto_incrustado ya
+# sobreviven al truncamiento sin importar el límite (ver construir_prompt),
+# así que este número solo determina cuánto detalle secundario se conserva
+# antes de recortar — por encima de 80 hay riesgo real de que el propio
+# Prompt Shortener de Midjourney reescriba el prompt en la otra punta.
 
 
 def _purgar_sintaxis_legacy(texto: str) -> tuple[str, List[str]]:
