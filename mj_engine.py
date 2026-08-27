@@ -521,20 +521,35 @@ def fusionar_vision_y_overrides(
         packs=ov.packs,
         low_waist=ov.low_waist if ov.low_waist is not None else False,
     )
-    
-    # Si hay descripción física construida, combinar con rasgos existentes
-    rasgos_fisicos = ov.rasgos_fisicos or vision.rasgos_fisicos_detectados
+
+    # Jerarquía física PRIMERO: por front-loading (doc: "Fórmula de Prompting
+    # V8.2 Óptima"), lo que va antes en la cadena recibe más peso de
+    # tokenización y sobrevive al truncamiento de 70 palabras. La jerarquía
+    # física es el control central de esta app — no debe quedar detrás de
+    # rasgos genéricos detectados por visión (cabello, ropa) ni arriesgarse
+    # a perderse si esos rasgos son verbosos.
+    rasgos_detectados = ov.rasgos_fisicos or vision.rasgos_fisicos_detectados
     if desc_fisica:
-        if rasgos_fisicos:
-            rasgos_fisicos = f"{rasgos_fisicos}, {desc_fisica}"
-        else:
-            rasgos_fisicos = desc_fisica
-    
+        rasgos_fisicos = f"{desc_fisica}, {rasgos_detectados}" if rasgos_detectados else desc_fisica
+    else:
+        rasgos_fisicos = rasgos_detectados
+
+    # contexto_entorno absorbe elementos_notables detectados por visión
+    # (doc: "detalles secundarios que un director de arte querría preservar
+    # en una regeneración") — antes se capturaban pero nunca llegaban al
+    # prompt final, así que pose/objetos/detalles de escena se perdían.
+    contexto_entorno = ov.contexto_entorno
+    if contexto_entorno is None:
+        contexto_entorno = vision.contexto_detectado
+        if vision.elementos_notables:
+            detalles = ", ".join(vision.elementos_notables)
+            contexto_entorno = f"{contexto_entorno}, {detalles}" if contexto_entorno else detalles
+
     return SolicitudPrompt(
         sujeto=ov.sujeto or vision.sujeto_detectado,
         rasgos_fisicos=rasgos_fisicos,
         accion_estado=ov.accion_estado or vision.accion_estado_detectado,
-        contexto_entorno=ov.contexto_entorno or vision.contexto_detectado,
+        contexto_entorno=contexto_entorno,
         iluminacion_atmosfera=ov.iluminacion_atmosfera or vision.iluminacion_detectada,
         medio_estilo=ov.medio_estilo or vision.medio_estilo_detectado,
         lente_angulo=ov.lente_angulo or vision.lente_angulo_detectado,
