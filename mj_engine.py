@@ -151,14 +151,15 @@ def construir_descripcion_fisica(
     que Midjourney V8.2 entiende y respeta.
     """
     partes = []
-    
-    # Nivel abdominal (A0-A8)
-    if nivel and nivel != NivelAbdominal.A0:
-        partes.append(TERMINOLOGIA_ABDOMINAL[nivel])
-    
-    # Packs específicos (override del nivel)
+
+    # Packs específicos OVERRIDEA el nivel — no se deben combinar los dos:
+    # antes se agregaban ambos incondicionalmente y podían contradecirse en
+    # el mismo prompt (ej. nivel A6 = "perfect 10-pack" + packs=6 =
+    # "6-pack abs" a la vez, un número de abdominales imposible).
     if packs and packs >= 4:
         partes.append(f"{packs}-pack abs, deeply defined")
+    elif nivel and nivel != NivelAbdominal.A0:
+        partes.append(TERMINOLOGIA_ABDOMINAL[nivel])
     
     # Perfil de proporción
     if proporcion:
@@ -306,6 +307,27 @@ PERFILES: dict[CategoriaEstetica, "PerfilEstetico"] = {
         nota_tecnica="raw obligatorio: sin él, V8.2 'limpia' grano/fugas de luz/"
                      "desaturación que son el objetivo estético.",
     ),
+}
+
+
+# PERFILES solo aporta números (--s/--raw/--chaos/--weird/modelo) por
+# categoría — nunca palabras. Sin un mapeo a texto, elegir una categoría
+# NO cambiaba una sola palabra del prompt: Midjourney interpreta la
+# dirección artística del TEXTO, los parámetros numéricos solo modulan
+# cómo se renderiza. DESCRIPTOR_ESTILO es el texto en inglés que le dice a
+# MJ qué estilo es, y se usa como fallback en construir_prompt() cuando no
+# hay un medio/estilo ya provisto por el usuario o por regenerar_en_estilos.
+DESCRIPTOR_ESTILO: dict[CategoriaEstetica, str] = {
+    CategoriaEstetica.FOTOREALISMO_RETRATO: "photorealistic photography, natural skin texture, true-to-life detail",
+    CategoriaEstetica.CINE: "cinematic photography, film still, dramatic color grading",
+    CategoriaEstetica.ANIME_MANGA: "anime illustration, Japanese animation style",
+    CategoriaEstetica.PINTURA_CLASICA: "classical oil painting, fine art brushwork",
+    CategoriaEstetica.CONCEPTUAL_FANTASIA: "fantasy concept art, digital painting",
+    CategoriaEstetica.EDITORIAL_MODA: "high fashion editorial photography",
+    CategoriaEstetica.MODELADO_3D_CGI: "3D CGI render, physically based rendering",
+    CategoriaEstetica.CYBERPUNK_SCIFI: "cyberpunk science fiction illustration, neon-lit dystopian atmosphere",
+    CategoriaEstetica.EXPERIMENTAL_SURREALISMO: "surreal experimental art, avant-garde composition",
+    CategoriaEstetica.VINTAGE_ANALOGICA: "vintage analog film photography, grainy retro aesthetic",
 }
 
 
@@ -674,13 +696,20 @@ def construir_prompt(sol: SolicitudPrompt) -> ResultadoPrompt:
     # NOTA: la descripción física ya está incluida en sol.rasgos_fisicos
     # por fusionar_vision_y_overrides() (flujo imagen) o construir_payload_texto()
     rasgos_combinados = sol.rasgos_fisicos or ""
-    
+
+    # medio_estilo: si no hay uno explícito (override del usuario, o
+    # detectado por visión y conservado porque coincide con la categoría),
+    # se usa el descriptor de la categoría estética elegida como fallback —
+    # sin esto, cambiar de categoría solo movía números (--s/--raw/--chaos)
+    # y el prompt nunca decía en palabras qué estilo se quería.
+    medio_estilo = sol.medio_estilo or DESCRIPTOR_ESTILO.get(sol.categoria)
+
     bloques = [
         f"{sol.sujeto}, {rasgos_combinados}" if rasgos_combinados else sol.sujeto,
         sol.accion_estado,
         sol.contexto_entorno,
         sol.iluminacion_atmosfera,
-        sol.medio_estilo,
+        medio_estilo,
         sol.lente_angulo,
     ]
     cuerpo = ". ".join(b.strip() for b in bloques if b and b.strip())
