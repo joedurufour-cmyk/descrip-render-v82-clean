@@ -1,7 +1,11 @@
-import os
-os.environ['GEMINI_API_KEY'] = 'AQ.Ab8RN8r74E2q-8bWArzGj_3w6mHqLGVx1S8e5gJ1hH7k8CJ4F2Z1n3oPqRsTuVwXyZ0123'
-os.environ['GEMINI_MODEL'] = 'gemini-3.7-flash'
+"""Servidor local de desarrollo.
 
+Requiere un archivo .env en la raíz del proyecto (ignorado por git) con:
+    GEMINI_API_KEY=tu_api_key_de_google_ai_studio
+    GEMINI_MODEL=gemini-3.7-flash   # opcional, este es el default
+
+main.py ya carga ese .env vía load_dotenv(), así que basta con crearlo.
+"""
 import uvicorn
 from main import app
 
