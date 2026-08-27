@@ -573,7 +573,15 @@ def fusionar_vision_y_overrides(
         accion_estado=ov.accion_estado or vision.accion_estado_detectado,
         contexto_entorno=contexto_entorno,
         iluminacion_atmosfera=ov.iluminacion_atmosfera or vision.iluminacion_detectada,
-        medio_estilo=ov.medio_estilo or vision.medio_estilo_detectado,
+        # Solo el override EXPLÍCITO del usuario (ov.medio_estilo) alimenta el
+        # prompt de salida — NUNCA vision.medio_estilo_detectado. El medio
+        # original detectado (ej. "ilustración digital estilizada" en una
+        # imagen fuente ilustrada) es solo informativo para el usuario (ya
+        # viaja en source_analysis/vision_raw); si se usara acá, le ganaba a
+        # la categoría estética que el usuario eligió explícitamente (ej.
+        # pedir "Fotoreal" y que el prompt final terminara diciendo
+        # "ilustración digital estilizada" en vez de DESCRIPTOR_ESTILO).
+        medio_estilo=ov.medio_estilo,
         lente_angulo=ov.lente_angulo or vision.lente_angulo_detectado,
         categoria=ov.categoria or vision.categoria_sugerida,
         texto_incrustado=(
