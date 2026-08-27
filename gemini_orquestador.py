@@ -91,6 +91,32 @@ Reglas de descripción obligatorias:
 Responde ÚNICAMENTE con el JSON del schema. Sin explicaciones, sin markdown, sin comentarios."""
 
 
+_GENERO_DESCRIPCION = {
+    "femenino": "presentación FEMENINA",
+    "masculino": "presentación MASCULINA",
+    "androgino": "presentación ANDRÓGINA (rasgos ambiguos, ni marcadamente masculinos ni femeninos)",
+}
+
+
+def construir_instruccion_vision(genero_objetivo: Optional[str] = None) -> str:
+    """SYSTEM_INSTRUCTION_VISION, con una regla adicional cuando el usuario
+    pidió una presentación de género específica (chip "Género" de la
+    Jerarquía Física). Antes esto se intentaba con un reemplazo de palabras
+    en Python DESPUÉS de la visión (".replace('his ', 'her ')") — frágil e
+    incompleto: no cubre español, ni la prosa libre que redacta Gemini, y
+    de hecho nunca tuvo efecto real porque ninguna terminología del motor
+    contenía esas palabras en inglés. Reinterpretar el género es un trabajo
+    de lenguaje natural, así que se le pide a Gemini en la MISMA llamada de
+    visión (sin costo/latencia extra) en vez de intentarlo con reglas fijas
+    después."""
+    if not genero_objetivo or genero_objetivo not in _GENERO_DESCRIPCION:
+        return SYSTEM_INSTRUCTION_VISION
+    desc = _GENERO_DESCRIPCION[genero_objetivo]
+    return SYSTEM_INSTRUCTION_VISION + f"""
+
+7. REINTERPRETACIÓN DE GÉNERO (pedido explícito del usuario): describí al sujeto con {desc}, sin importar el género que se vea literalmente en la imagen. Esto aplica a `sujeto_detectado` y `rasgos_fisicos_detectados`: adaptá rasgos faciales, complexión corporal y terminología (sustantivos, pronombres) a esa presentación. Es una REINTERPRETACIÓN de género, no un personaje distinto — conservá todo lo demás sin cambios: identidad/reconocibilidad, pose, vestimenta (adaptada a un corte equivalente si el término de prenda es marcadamente de un género, ej. "vestido" → "camisa" para presentación masculina, conservando color/estilo/patrón), objetos, entorno, encuadre. Ejemplo: imagen de una mujer con vestido rojo y presentación pedida MASCULINA → sujeto_detectado="Hombre joven..." con complexión y rasgos correspondientes; rasgos_fisicos_detectados menciona una prenda equivalente en corte masculino del mismo color/estilo."""
+
+
 def _limpiar_schema_gemini(schema: dict) -> dict:
     """Elimina valores por defecto del schema — Gemini API no los soporta en
     response_schema (arroja: 'Default value is not supported')."""
