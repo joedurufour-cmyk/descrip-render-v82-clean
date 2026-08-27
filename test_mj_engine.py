@@ -85,13 +85,13 @@ check("--niji 7" in r.prompt_final, "D: prompt final debe usar --niji 7, no --v 
 check(r.parametros.raw is False, "D: niji no debe llevar --raw")
 print("D OK ->", r.prompt_final, "| warnings:", r.warnings)
 
-# --- Caso D2: Anime forzado en V8.2 base ---
+# --- Caso D2: Anime forzado en V8.1 base ---
 r = construir_prompt(SolicitudPrompt(
     sujeto="Guerrera samurái joven",
     categoria=CategoriaEstetica.ANIME_MANGA,
     forzar_v8_2_en_anime=True,
 ))
-check(r.modelo_efectivo == ModeloMJ.V8_2, "D2: override debe mantener v8.2")
+check(r.modelo_efectivo == ModeloMJ.V8_1, "D2: override debe mantener v8.1")
 check(200 <= r.parametros.stylize <= 300, f"D2: fallback stylize 200-300: {r.parametros.stylize}")
 print("D2 OK ->", r.prompt_final)
 

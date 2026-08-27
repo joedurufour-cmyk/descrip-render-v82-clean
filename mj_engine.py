@@ -254,8 +254,8 @@ PERFILES: dict[CategoriaEstetica, "PerfilEstetico"] = {
         raw_obligatorio=False,
         modelo_override=ModeloMJ.NIJI_7,
         nota_tecnica="Estética anime real requiere Niji 7 (modelo independiente, "
-                     "no combinable con -v 8.2). El rango 200-300 es SOLO fallback "
-                     "si el flujo de trabajo obliga a usar V8.2 base.",
+                     "no combinable con -v 8.1). El rango 200-300 es SOLO fallback "
+                     "si el flujo de trabajo obliga a usar V8.1 base.",
     ),
     CategoriaEstetica.PINTURA_CLASICA: PerfilEstetico(
         categoria=CategoriaEstetica.PINTURA_CLASICA,
@@ -345,7 +345,7 @@ PATRON_DOBLE_PUNTO_PESO = re.compile(r"\w+::\d+(\.\d+)?")
 
 class ParametrosMJ(BaseModel):
     ar: str = Field(default="1:1", description="Aspect ratio W:H")
-    v: ModeloMJ = ModeloMJ.V8_2
+    v: ModeloMJ = ModeloMJ.V8_1
     resolucion: Resolucion = Resolucion.SD
     stylize: int = Field(default=100, ge=0, le=1000)
     chaos: int = Field(default=0, ge=0, le=100)
@@ -391,7 +391,7 @@ class ParametrosMJ(BaseModel):
         if self.v == ModeloMJ.NIJI_7 and (self.stylize != 100 or self.raw or self.exp > 0):
             self._agregar_warning(
                 "Niji 7 es una familia de modelo independiente: los parámetros "
-                "estéticos ajustados para V8.2 (stylize/raw/exp) no tienen "
+                "estéticos ajustados para V8.1 (stylize/raw/exp) no tienen "
                 "interpolación nativa garantizada; validar visualmente."
             )
         return self
@@ -683,12 +683,14 @@ def construir_prompt(sol: SolicitudPrompt) -> ResultadoPrompt:
     warnings: List[str] = []
 
     # --- resolver modelo efectivo (override niji) ---
-    modelo_efectivo = ModeloMJ.V8_2
+    # V8.1 por default: V8.2 no está disponible/estable en la práctica (Midjourney
+    # lo normaliza a v8.1 de todos modos), y V8.1 es el modelo base estable real.
+    modelo_efectivo = ModeloMJ.V8_1
     if perfil.modelo_override == ModeloMJ.NIJI_7 and not sol.forzar_v8_2_en_anime:
         modelo_efectivo = ModeloMJ.NIJI_7
         warnings.append(
             "Categoría anime/manga: enrutado a Niji 7 (modelo base independiente). "
-            "Usa forzar_v8_2_en_anime=True para forzar V8.2 base con fallback "
+            "Usa forzar_v8_2_en_anime=True para forzar V8.1 base con fallback "
             "stylize 200-300 (calidad anime inferior)."
         )
 
@@ -749,7 +751,7 @@ def construir_prompt(sol: SolicitudPrompt) -> ResultadoPrompt:
         stylize_val = min(stylize_val, 100)
 
     if modelo_efectivo == ModeloMJ.NIJI_7:
-        raw_val = False   # doc: niji no opera con raw de V8.2
+        raw_val = False   # doc: niji no opera con raw de la familia V8.x
 
     # Nota: conteo y truncamiento de palabras ya aplicados arriba
 

@@ -43,7 +43,7 @@ logger = logging.getLogger(__name__)
 
 app = FastAPI(
     title="DescripRender V8.2",
-    description="Motor determinístico de prompts para Midjourney V8.2 / Niji 7",
+    description="Motor determinístico de prompts para Midjourney V8.1 / Niji 7",
     version="2.0.0"
 )
 
