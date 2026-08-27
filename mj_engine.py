@@ -561,14 +561,24 @@ def regenerar_en_estilos(
     """Toma UNA imagen ya descrita y produce N prompts, uno por cada estilo
     en `categorias_destino`, conservando sujeto/atributos detectados (o sus
     overrides) y variando solo la categoría estética. Este es el flujo
-    'una imagen → varios estilos' pedido explícitamente."""
+    'una imagen → varios estilos' pedido explícitamente.
+
+    NOTA: medio_estilo_detectado (el medio/estilo ORIGINAL de la imagen, ej.
+    "ilustración estilo anime") se descarta al regenerar salvo que el usuario
+    lo haya fijado explícitamente vía overrides.medio_estilo. De lo contrario
+    ese medio original quedaría incrustado en el prompt de CADA categoría
+    destino, contradiciendo estilos distintos al original (ej. forzar "anime"
+    dentro de un prompt de pintura clásica o fotorrealismo)."""
     resultados = {}
+    medio_explicito = overrides.medio_estilo if overrides else None
     for cat in categorias_destino:
         ov_cat = (
             overrides.model_copy(update={"categoria": cat}) if overrides
             else OverridesTexto(categoria=cat)
         )
         sol = fusionar_vision_y_overrides(vision, ov_cat, modo=modo)
+        if not medio_explicito:
+            sol = sol.model_copy(update={"medio_estilo": None})
         resultados[cat] = construir_prompt(sol)
     return resultados
 
