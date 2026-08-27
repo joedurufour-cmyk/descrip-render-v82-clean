@@ -711,7 +711,6 @@ def construir_prompt(sol: SolicitudPrompt) -> ResultadoPrompt:
         sol.accion_estado,
         sol.contexto_entorno,
         sol.iluminacion_atmosfera,
-        medio_estilo,
         sol.lente_angulo,
     ]
     cuerpo = ". ".join(b.strip() for b in bloques if b and b.strip())
@@ -727,6 +726,17 @@ def construir_prompt(sol: SolicitudPrompt) -> ResultadoPrompt:
             f"(doc: límite seguro para evitar Prompt Shortener). "
             f"Priorizados: sujeto, rasgos físicos, acción."
         )
+
+    # medio_estilo se agrega DESPUÉS del truncamiento (igual que el texto
+    # incrustado más abajo) para que sobreviva siempre: es lo único que le
+    # dice a Midjourney en palabras qué categoría estética aplicar (los
+    # parámetros --s/--raw/--chaos por sí solos no alcanzan). Estaba dentro
+    # de `bloques` — casi al final — así que en prompts largos (el caso más
+    # común, sobre todo con jerarquía física activada) el truncamiento se lo
+    # comía antes de llegar a Midjourney, y la categoría elegida quedaba sin
+    # ningún efecto visible en el resultado.
+    if medio_estilo:
+        cuerpo = cuerpo.rstrip(". ") + f". {medio_estilo}"
 
     # --- render de texto tipográfico (doc: "Renderizado de Texto") ---
     stylize_val = (perfil.stylize_min + perfil.stylize_max) // 2
