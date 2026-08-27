@@ -27,6 +27,7 @@ from mj_engine import (
     SolicitudPrompt, ResultadoPrompt, DescripcionVisual, OverridesTexto,
     CategoriaEstetica, Resolucion, ModeloMJ,
     construir_prompt, fusionar_vision_y_overrides, regenerar_en_estilos,
+    construir_variante_estilo_original,
 )
 from gemini_orquestador import (
     construir_payload_vision, procesar_respuesta_vision,
@@ -217,6 +218,21 @@ def _categorias_para_multi_estilo(
     return [seleccionada] + random.sample(otras, n_otras)
 
 
+def _variante_estilo_original_dict(
+    vision: DescripcionVisual, overrides: Optional[OverridesTexto], modo_enum: Resolucion
+) -> dict:
+    """Serializa la variante extra 'copia del estilo original' (ver
+    construir_variante_estilo_original en mj_engine.py) para la respuesta
+    JSON de /v2/generate."""
+    v = construir_variante_estilo_original(vision, overrides, modo=modo_enum)
+    return {
+        "prompt": v.prompt_final,
+        "parametros": v.parametros.model_dump(),
+        "warnings": v.warnings,
+        "categoria_base": v.perfil_aplicado.value,
+    }
+
+
 def _resultado_to_legacy(resultado: ResultadoPrompt, transform: TransformRequest) -> GenerationResponse:
     """Mapea ResultadoPrompt (motor v2) al formato legacy del APK.
 
@@ -391,6 +407,7 @@ async def generate_v2(
     ar: str = Form("1:1"),
     modo: str = Form("sd"),
     n_estilos: int = Form(1),
+    incluir_estilo_original: bool = Form(False),
 ):
     """
     Endpoint V2 — arquitectura completa de 3 etapas.
@@ -452,11 +469,11 @@ async def generate_v2(
 
             vision_dict = json.loads(vision_data)
 
-            if n_estilos > 1:
+            if n_estilos > 1 or incluir_estilo_original:
                 vision = DescripcionVisual.model_validate(vision_dict)
                 cats = _categorias_para_multi_estilo(overrides, cat_enum, n_estilos)
                 resultados = regenerar_en_estilos(vision, cats, overrides, modo=modo_enum)
-                return {
+                response = {
                     "modo": "multi-estilo",
                     "source_analysis": vision_dict,
                     "vision_raw": vision_dict,
@@ -469,6 +486,11 @@ async def generate_v2(
                         for k, v in resultados.items()
                     }
                 }
+                if incluir_estilo_original:
+                    response["variante_estilo_original"] = _variante_estilo_original_dict(
+                        vision, overrides, modo_enum
+                    )
+                return response
             else:
                 resultado = procesar_respuesta_vision(vision_data, overrides, modo=modo_enum)
                 return {
@@ -503,11 +525,11 @@ async def generate_v2(
         # --- Flujo con vision previa ---
         elif vision_json:
             logger.info("Processing vision_json flow")
-            if n_estilos > 1:
+            if n_estilos > 1 or incluir_estilo_original:
                 vision = DescripcionVisual.model_validate_json(vision_json)
                 cats = _categorias_para_multi_estilo(overrides, cat_enum, n_estilos)
                 resultados = regenerar_en_estilos(vision, cats, overrides, modo=modo_enum)
-                return {
+                response = {
                     "modo": "multi-estilo",
                     "resultados": {
                         k.value: {
@@ -518,6 +540,11 @@ async def generate_v2(
                         for k, v in resultados.items()
                     }
                 }
+                if incluir_estilo_original:
+                    response["variante_estilo_original"] = _variante_estilo_original_dict(
+                        vision, overrides, modo_enum
+                    )
+                return response
             else:
                 resultado = procesar_respuesta_vision(vision_json, overrides, modo=modo_enum)
                 return {

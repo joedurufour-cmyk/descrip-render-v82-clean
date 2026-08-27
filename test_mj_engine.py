@@ -1,7 +1,8 @@
 """
 test_mj_engine.py — Tests exhaustivos del motor determinístico.
-17 casos que validan: perfiles, parámetros, purga de legacy, HD/SD,
-visión+overrides, y regeneración multi-estilo.
+20 casos que validan: perfiles, parámetros, purga de legacy, HD/SD,
+visión+overrides, regeneración multi-estilo, y la variante de copia de
+estilo original.
 """
 
 import sys
@@ -17,6 +18,7 @@ from mj_engine import (
     construir_prompt,
     fusionar_vision_y_overrides,
     regenerar_en_estilos,
+    construir_variante_estilo_original,
 )
 
 fallos = []
@@ -238,6 +240,31 @@ check(r_ocr2.parametros.raw is True, "P2: override explícito de texto SÍ debe 
 check('"LIVE TONIGHT"' in r_ocr2.prompt_final, "P2: texto debe aparecer entre comillas cuando es override explícito")
 print("P2 OK ->", r_ocr2.prompt_final)
 
+# --- Caso Q: variante "copia del estilo original" — sin overrides ---
+# Debe usar categoria_sugerida (no una elegida por el usuario) y el medio
+# literal detectado por visión, no un DESCRIPTOR_ESTILO genérico.
+r_q = construir_variante_estilo_original(vision)
+check(r_q.perfil_aplicado == vision.categoria_sugerida, "Q: debe usar categoria_sugerida de la visión")
+check("fotografía digital" in r_q.prompt_final, "Q: medio_estilo_detectado debe aparecer literal en el prompt")
+check("Mujer con abrigo rojo" in r_q.prompt_final, "Q: sujeto detectado debe conservarse")
+print("Q OK ->", r_q.prompt_final)
+
+# --- Caso Q2: variante estilo-original IGNORA la categoría elegida por el
+# usuario para las otras variantes — es intencional, siempre usa la
+# detectada, porque el objetivo es reproducir el estilo real de la imagen ---
+ov_otra_cat = OverridesTexto(categoria=CategoriaEstetica.FOTOREALISMO_RETRATO)
+r_q2 = construir_variante_estilo_original(vision, ov_otra_cat)
+check(r_q2.perfil_aplicado == vision.categoria_sugerida, "Q2: override.categoria del usuario NO debe pisar categoria_sugerida")
+print("Q2 OK ->", r_q2.prompt_final)
+
+# --- Caso Q3: override EXPLÍCITO de medio_estilo sigue ganando incluso en
+# la variante de estilo original (regla general del motor: override > detección) ---
+ov_medio = OverridesTexto(medio_estilo="acuarela suelta, pinceladas visibles")
+r_q3 = construir_variante_estilo_original(vision, ov_medio)
+check("acuarela suelta" in r_q3.prompt_final, "Q3: override explícito de medio_estilo debe ganarle al detectado")
+check("fotografía digital" not in r_q3.prompt_final, "Q3: medio detectado no debe filtrarse si hay override explícito")
+print("Q3 OK ->", r_q3.prompt_final)
+
 # ═══════════════════════════════════════════════════════════
 # RESUMEN
 # ═══════════════════════════════════════════════════════════
@@ -255,5 +282,5 @@ if __name__ == "__main__":
             print(f"  - {f}")
         sys.exit(1)
     else:
-        print("✅ TODOS LOS TESTS PASARON (17/17)")
+        print("✅ TODOS LOS TESTS PASARON (20/20)")
         sys.exit(0)
