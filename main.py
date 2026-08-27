@@ -15,9 +15,11 @@ from pydantic import ValidationError
 from dotenv import load_dotenv
 from PIL import Image
 import io
+import time
 
 from google import genai
 from google.genai import types
+from google.genai import errors as genai_errors
 
 # Nuevo motor determinístico
 from mj_engine import (
@@ -110,6 +112,29 @@ def _img_to_bytes(image_bytes: bytes) -> bytes:
     return buffered.getvalue()
 
 
+_GEMINI_CODIGOS_TRANSITORIOS = {429, 503}  # 429 rate limit, 503 modelo saturado
+
+
+def _generate_content_con_reintentos(max_intentos: int = 3, **kwargs):
+    """Envoltorio de gemini_client.models.generate_content() con reintento y
+    backoff exponencial (1s/2s) ante errores transitorios de la API de Gemini
+    (429 rate limit, 503 "currently experiencing high demand"). Estos códigos
+    suelen resolverse solos en segundos; sin reintento, cualquier pico de
+    demanda de Google se propaga directo como error 500 al usuario."""
+    for intento in range(1, max_intentos + 1):
+        try:
+            return gemini_client.models.generate_content(**kwargs)
+        except genai_errors.APIError as e:
+            if e.code not in _GEMINI_CODIGOS_TRANSITORIOS or intento == max_intentos:
+                raise
+            espera = 2 ** (intento - 1)
+            logger.warning(
+                f"Gemini {e.code} (intento {intento}/{max_intentos}), "
+                f"reintentando en {espera}s..."
+            )
+            time.sleep(espera)
+
+
 def _call_gemini_vision(image_bytes: bytes) -> str:
     """Etapa 0: Gemini describe imagen → JSON DescripcionVisual."""
     import traceback
@@ -127,7 +152,7 @@ def _call_gemini_vision(image_bytes: bytes) -> str:
         )
 
         logger.info(f"Calling Gemini vision with model: {GEMINI_MODEL}")
-        response = gemini_client.models.generate_content(
+        response = _generate_content_con_reintentos(
             model=GEMINI_MODEL,
             contents=[content],
             config=types.GenerateContentConfig(
@@ -149,7 +174,7 @@ def _call_gemini_texto(idea: str) -> str:
     try:
         payload = construir_payload_texto(idea)
         logger.info(f"Calling Gemini text with model: {GEMINI_MODEL}")
-        response = gemini_client.models.generate_content(
+        response = _generate_content_con_reintentos(
             model=GEMINI_MODEL,
             contents=payload["contents"],
             config={
