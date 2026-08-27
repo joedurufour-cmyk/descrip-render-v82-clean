@@ -146,9 +146,9 @@ check(any("exp" in w.lower() and "40" in w for w in p.warnings), "I: exp>=25 deb
 print("I OK -> warnings:", p.warnings)
 
 # --- Caso J: prompt largo debe disparar warning de Prompt Shortener ---
-sujeto_largo = " ".join(["palabra"] * 80)
+sujeto_largo = " ".join(["palabra"] * 120)
 r = construir_prompt(SolicitudPrompt(sujeto=sujeto_largo, categoria=CategoriaEstetica.CINE))
-check(any("Prompt Shortener" in w for w in r.warnings), "J: prompt >70 palabras debe advertir shortener")
+check(any("Prompt Shortener" in w for w in r.warnings), "J: prompt >100 palabras debe advertir shortener")
 print("J OK -> conteo:", r.conteo_palabras)
 
 # --- Caso K: validación de rangos duros pydantic (debe fallar si excede) ---
