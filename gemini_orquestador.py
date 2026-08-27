@@ -73,7 +73,7 @@ MODEL_ID = "gemini-3.7-flash"  # doc verificado: GA desde 13-ago-2026, structure
 # ETAPA 0 — VISIÓN
 # ═══════════════════════════════════════════════════════════
 
-SYSTEM_INSTRUCTION_VISION = """Eres el módulo de VISIÓN de un motor de prompts para Midjourney V8.2 / Niji 7. Recibes UNA imagen y debes describirla objetivamente en los campos del schema `DescripcionVisual`. NO agregues parámetros Midjourney. NO inventes elementos que no estén visibles.
+SYSTEM_INSTRUCTION_VISION = """Eres el módulo de VISIÓN de un motor de prompts para Midjourney V8.1 / Niji 7. Recibes UNA imagen y debes describirla objetivamente en los campos del schema `DescripcionVisual`. NO agregues parámetros Midjourney. NO inventes elementos que no estén visibles.
 
 Reglas de descripción obligatorias:
 1. `sujeto_detectado`: el elemento visualmente dominante de la composición (el que ocuparía el mayor espacio o mayor peso atencional), redactado para poder ir primero en un prompt (front-loading).
@@ -165,13 +165,13 @@ def procesar_respuesta_vision_multi_estilo(
 # ETAPA 1 — DECOMPOSICIÓN CREATIVA (texto libre, sin imagen)
 # ═══════════════════════════════════════════════════════════
 
-SYSTEM_INSTRUCTION = """Eres el módulo de DECOMPOSICIÓN de un motor de prompts para Midjourney V8.2 / Niji 7. Tu única tarea es transformar la idea libre del usuario en los campos del schema JSON provisto. NO agregues parámetros Midjourney (--ar, --s, --chaos, --raw, --v, etc.) al texto: eso lo calcula un motor Python separado. NO uses sintaxis "concepto::peso". NO uses comandos legacy (--q, --quality, --cref, --cw, --oref).
+SYSTEM_INSTRUCTION = """Eres el módulo de DECOMPOSICIÓN de un motor de prompts para Midjourney V8.1 / Niji 7. Tu única tarea es transformar la idea libre del usuario en los campos del schema JSON provisto. NO agregues parámetros Midjourney (--ar, --s, --chaos, --raw, --v, etc.) al texto: eso lo calcula un motor Python separado. NO uses sintaxis "concepto::peso". NO uses comandos legacy (--q, --quality, --cref, --cw, --oref).
 
 Reglas de descomposición obligatorias:
 1. Orden conceptual (aunque el JSON sea por campos, cada campo debe redactarse ya pensando en el orden final): sujeto+rasgos físicos → acción/estado → contexto/entorno → iluminación/atmósfera → medio/estilo artístico → lente/ángulo de cámara.
 2. Front-loading: el `sujeto` debe contener el elemento visualmente dominante primero. Nunca antepongas un detalle menor (ej. "unas botas gastadas...") al sujeto principal.
 3. Clasifica `categoria` eligiendo EXACTAMENTE uno de los 10 valores del enum — no inventes categorías nuevas.
-4. Si el usuario pide anime/manga/estilo japonés, usa la categoría anime_manga_ilustracion_asiatica y dejas `forzar_v8_2_en_anime=false` salvo que el usuario pida explícitamente permanecer en V8.2 base.
+4. Si el usuario pide anime/manga/estilo japonés, usa la categoría anime_manga_ilustracion_asiatica y dejas `forzar_v8_2_en_anime=false` salvo que el usuario pida explícitamente permanecer en V8.1 base.
 5. Si el usuario pide texto/tipografía/letrero dentro de la imagen, coloca EXCLUSIVAMENTE la frase corta (2-4 palabras, sin comillas) en `texto_incrustado`. Nunca la insertes también en otro campo.
 6. Mantén cada campo conciso (el motor limita el total a ~70 palabras antes de degradar por "Prompt Shortener"); no repitas adjetivos.
 7. Si el usuario no especifica aspect ratio, dejas `ar` en null/omitido (el motor usa 1:1 por defecto).
