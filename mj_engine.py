@@ -652,6 +652,30 @@ def regenerar_en_estilos(
     return resultados
 
 
+def construir_variante_estilo_original(
+    vision: DescripcionVisual,
+    overrides: Optional[OverridesTexto] = None,
+    modo: Resolucion = Resolucion.SD,
+) -> ResultadoPrompt:
+    """Variante EXTRA (no cuenta contra n_estilos, se pide aparte con
+    incluir_estilo_original): reproduce el estilo LITERAL de la imagen
+    original subida en vez de un DESCRIPTOR_ESTILO genérico de categoría.
+
+    Usa vision.categoria_sugerida (la categoría que Gemini detectó como
+    estilo visual ACTUAL de la imagen) para que los parámetros numéricos
+    --s/--raw/--chaos/--weird correspondan a ese estilo real, y
+    vision.medio_estilo_detectado como texto de medio/estilo — salvo que el
+    usuario ya haya fijado un medio_estilo explícito vía overrides, que
+    sigue ganando siempre (misma regla que el resto del motor: override
+    explícito > detección automática)."""
+    ov = overrides.model_copy() if overrides else OverridesTexto()
+    ov.categoria = vision.categoria_sugerida
+    if not ov.medio_estilo:
+        ov.medio_estilo = vision.medio_estilo_detectado
+    sol = fusionar_vision_y_overrides(vision, ov, modo=modo)
+    return construir_prompt(sol)
+
+
 class ResultadoPrompt(BaseModel):
     prompt_final: str
     parametros: ParametrosMJ
