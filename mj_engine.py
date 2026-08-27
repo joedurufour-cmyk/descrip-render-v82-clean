@@ -584,10 +584,19 @@ def fusionar_vision_y_overrides(
         medio_estilo=ov.medio_estilo,
         lente_angulo=ov.lente_angulo or vision.lente_angulo_detectado,
         categoria=ov.categoria or vision.categoria_sugerida,
-        texto_incrustado=(
-            ov.texto_incrustado if ov.texto_incrustado is not None
-            else vision.texto_detectado_ocr
-        ),
+        # Solo el override EXPLÍCITO del usuario alimenta texto_incrustado —
+        # NUNCA vision.texto_detectado_ocr automáticamente. El OCR de Gemini
+        # alucina texto sobre logos/símbolos/texturas con más frecuencia de
+        # la deseable (ver fix anterior de anti-alucinación en
+        # SYSTEM_INSTRUCTION_VISION, que atenúa pero no elimina el problema
+        # — sigue siendo el juicio de un modelo "flash" sobre una imagen).
+        # texto_incrustado fuerza --raw y le pide a Midjourney que renderice
+        # ese texto LITERAL como letrero en la imagen, así que una lectura
+        # alucinada arruina la composición cada vez que ocurre. El texto
+        # detectado sigue visible para el usuario en source_analysis/
+        # vision_raw — si es correcto, lo puede confirmar a mano en el
+        # override "Texto Incrustado" de la UI.
+        texto_incrustado=ov.texto_incrustado,
         modo=modo,
         ar=ov.ar or "1:1",
         p=ov.p,
