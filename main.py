@@ -45,6 +45,9 @@ from gemini_orquestador import (
 # Legacy models para compatibilidad
 from models import TransformRequest, GenerationResponse, SourceAnalysis, GeneratedPrompt
 
+# Tab Creatividad (Fase F): chat multi-turno con el director de arte
+from creativo import router as creativo_router, set_gemini as _set_gemini_creativo
+
 load_dotenv()
 
 # Logging
@@ -87,6 +90,9 @@ if GEMINI_API_KEY:
         print(f"ERROR: No se pudo configurar Gemini client: {e}")
 else:
     print("WARNING: GEMINI_API_KEY no configurada.")
+
+_set_gemini_creativo(gemini_client, GEMINI_MODEL)
+app.include_router(creativo_router)
 
 
 # ═══════════════════════════════════════════════════════════
