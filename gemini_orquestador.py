@@ -119,12 +119,30 @@ def construir_instruccion_vision(genero_objetivo: Optional[str] = None) -> str:
 
 def _limpiar_schema_gemini(schema: dict) -> dict:
     """Elimina valores por defecto del schema — Gemini API no los soporta en
-    response_schema (arroja: 'Default value is not supported')."""
+    response_schema (arroja: 'Default value is not supported') — y desenvuelve
+    el patrón allOf de un solo elemento que Pydantic v2 genera para todo campo
+    con tipo enum/$ref que además tiene un default (ej. `modo: Resolucion =
+    Resolucion.SD`): en vez de `{"$ref": "..."}` directo, emite
+    `{"allOf": [{"$ref": "..."}], "default": "sd"}` (JSON Schema históricamente
+    no permite mezclar $ref con otras keys, así que Pydantic envuelve en allOf
+    para poder adjuntar el default al lado).
+
+    El transformer de google-genai (`_transformers.process_schema`) sabe
+    resolver un `$ref` suelto, pero no tiene ningún manejo para `allOf` — cae
+    al branch final con `schema.get("type")` en None y explota con
+    `AttributeError: 'NoneType' object has no attribute 'upper'`. Reproducido
+    y confirmado corriendo `process_schema` directo contra el schema de
+    RespuestaCreativa (ver test_creativo.py) antes de este fix."""
     import copy
     cleaned = copy.deepcopy(schema)
     def _recurse(node):
         if isinstance(node, dict):
             node.pop("default", None)
+            all_of = node.get("allOf")
+            if isinstance(all_of, list) and len(all_of) == 1:
+                envuelto = node.pop("allOf")[0]
+                for k, v in envuelto.items():
+                    node.setdefault(k, v)
             for v in node.values():
                 _recurse(v)
         elif isinstance(node, list):
