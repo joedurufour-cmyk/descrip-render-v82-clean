@@ -339,6 +339,77 @@ DESCRIPTOR_ESTILO: dict[CategoriaEstetica, str] = {
 }
 
 
+# D3: multi-estilo determinístico. Para cada categoría, las otras 9
+# ordenadas de más a menos cercana estéticamente (medio/técnica de
+# renderizado, no tema) — reemplaza el random.sample() que hacía que "una
+# imagen → N estilos" devolviera un lote distinto cada vez que se pedía,
+# rompiendo la promesa de determinismo del resto del motor. Curada a mano
+# en base a DESCRIPTOR_ESTILO: familias foto (fotorealismo/cine/editorial/
+# vintage), ilustración (anime/pintura/conceptual/experimental) y
+# digital (3D/cyberpunk).
+VECINOS_ESTETICOS: dict[CategoriaEstetica, list[CategoriaEstetica]] = {
+    CategoriaEstetica.FOTOREALISMO_RETRATO: [
+        CategoriaEstetica.CINE, CategoriaEstetica.EDITORIAL_MODA, CategoriaEstetica.VINTAGE_ANALOGICA,
+        CategoriaEstetica.MODELADO_3D_CGI, CategoriaEstetica.PINTURA_CLASICA, CategoriaEstetica.CONCEPTUAL_FANTASIA,
+        CategoriaEstetica.CYBERPUNK_SCIFI, CategoriaEstetica.ANIME_MANGA, CategoriaEstetica.EXPERIMENTAL_SURREALISMO,
+    ],
+    CategoriaEstetica.CINE: [
+        CategoriaEstetica.FOTOREALISMO_RETRATO, CategoriaEstetica.EDITORIAL_MODA, CategoriaEstetica.CYBERPUNK_SCIFI,
+        CategoriaEstetica.VINTAGE_ANALOGICA, CategoriaEstetica.CONCEPTUAL_FANTASIA, CategoriaEstetica.MODELADO_3D_CGI,
+        CategoriaEstetica.PINTURA_CLASICA, CategoriaEstetica.EXPERIMENTAL_SURREALISMO, CategoriaEstetica.ANIME_MANGA,
+    ],
+    CategoriaEstetica.ANIME_MANGA: [
+        CategoriaEstetica.CONCEPTUAL_FANTASIA, CategoriaEstetica.PINTURA_CLASICA, CategoriaEstetica.EXPERIMENTAL_SURREALISMO,
+        CategoriaEstetica.CYBERPUNK_SCIFI, CategoriaEstetica.MODELADO_3D_CGI, CategoriaEstetica.EDITORIAL_MODA,
+        CategoriaEstetica.CINE, CategoriaEstetica.VINTAGE_ANALOGICA, CategoriaEstetica.FOTOREALISMO_RETRATO,
+    ],
+    CategoriaEstetica.PINTURA_CLASICA: [
+        CategoriaEstetica.CONCEPTUAL_FANTASIA, CategoriaEstetica.ANIME_MANGA, CategoriaEstetica.EXPERIMENTAL_SURREALISMO,
+        CategoriaEstetica.VINTAGE_ANALOGICA, CategoriaEstetica.EDITORIAL_MODA, CategoriaEstetica.CINE,
+        CategoriaEstetica.FOTOREALISMO_RETRATO, CategoriaEstetica.MODELADO_3D_CGI, CategoriaEstetica.CYBERPUNK_SCIFI,
+    ],
+    CategoriaEstetica.CONCEPTUAL_FANTASIA: [
+        CategoriaEstetica.PINTURA_CLASICA, CategoriaEstetica.EXPERIMENTAL_SURREALISMO, CategoriaEstetica.ANIME_MANGA,
+        CategoriaEstetica.CYBERPUNK_SCIFI, CategoriaEstetica.MODELADO_3D_CGI, CategoriaEstetica.CINE,
+        CategoriaEstetica.EDITORIAL_MODA, CategoriaEstetica.VINTAGE_ANALOGICA, CategoriaEstetica.FOTOREALISMO_RETRATO,
+    ],
+    CategoriaEstetica.EDITORIAL_MODA: [
+        CategoriaEstetica.CINE, CategoriaEstetica.FOTOREALISMO_RETRATO, CategoriaEstetica.VINTAGE_ANALOGICA,
+        CategoriaEstetica.PINTURA_CLASICA, CategoriaEstetica.CONCEPTUAL_FANTASIA, CategoriaEstetica.MODELADO_3D_CGI,
+        CategoriaEstetica.CYBERPUNK_SCIFI, CategoriaEstetica.ANIME_MANGA, CategoriaEstetica.EXPERIMENTAL_SURREALISMO,
+    ],
+    CategoriaEstetica.MODELADO_3D_CGI: [
+        CategoriaEstetica.CYBERPUNK_SCIFI, CategoriaEstetica.CONCEPTUAL_FANTASIA, CategoriaEstetica.FOTOREALISMO_RETRATO,
+        CategoriaEstetica.CINE, CategoriaEstetica.ANIME_MANGA, CategoriaEstetica.EDITORIAL_MODA,
+        CategoriaEstetica.EXPERIMENTAL_SURREALISMO, CategoriaEstetica.PINTURA_CLASICA, CategoriaEstetica.VINTAGE_ANALOGICA,
+    ],
+    CategoriaEstetica.CYBERPUNK_SCIFI: [
+        CategoriaEstetica.MODELADO_3D_CGI, CategoriaEstetica.CONCEPTUAL_FANTASIA, CategoriaEstetica.CINE,
+        CategoriaEstetica.ANIME_MANGA, CategoriaEstetica.EXPERIMENTAL_SURREALISMO, CategoriaEstetica.EDITORIAL_MODA,
+        CategoriaEstetica.FOTOREALISMO_RETRATO, CategoriaEstetica.PINTURA_CLASICA, CategoriaEstetica.VINTAGE_ANALOGICA,
+    ],
+    CategoriaEstetica.EXPERIMENTAL_SURREALISMO: [
+        CategoriaEstetica.CONCEPTUAL_FANTASIA, CategoriaEstetica.PINTURA_CLASICA, CategoriaEstetica.ANIME_MANGA,
+        CategoriaEstetica.CYBERPUNK_SCIFI, CategoriaEstetica.MODELADO_3D_CGI, CategoriaEstetica.CINE,
+        CategoriaEstetica.EDITORIAL_MODA, CategoriaEstetica.FOTOREALISMO_RETRATO, CategoriaEstetica.VINTAGE_ANALOGICA,
+    ],
+    CategoriaEstetica.VINTAGE_ANALOGICA: [
+        CategoriaEstetica.FOTOREALISMO_RETRATO, CategoriaEstetica.EDITORIAL_MODA, CategoriaEstetica.CINE,
+        CategoriaEstetica.PINTURA_CLASICA, CategoriaEstetica.CONCEPTUAL_FANTASIA, CategoriaEstetica.ANIME_MANGA,
+        CategoriaEstetica.MODELADO_3D_CGI, CategoriaEstetica.CYBERPUNK_SCIFI, CategoriaEstetica.EXPERIMENTAL_SURREALISMO,
+    ],
+}
+
+
+def categorias_vecinas(seleccionada: CategoriaEstetica, n_estilos: int) -> List[CategoriaEstetica]:
+    """Categorías para el flujo 'una imagen → N estilos': la elegida por el
+    usuario SIEMPRE primera, seguida de sus (n_estilos-1) vecinas más
+    cercanas según VECINOS_ESTETICOS. 100% determinístico — misma entrada,
+    mismo lote siempre, sin random.sample()."""
+    n_otras = min(max(n_estilos - 1, 0), len(VECINOS_ESTETICOS[seleccionada]))
+    return [seleccionada] + VECINOS_ESTETICOS[seleccionada][:n_otras]
+
+
 # ═══════════════════════════════════════════════════════════
 # 3. PARÁMETROS MJ — contrato validado (capa dura anti-alucinación del LLM)
 # ═══════════════════════════════════════════════════════════
@@ -447,6 +518,9 @@ class SolicitudPrompt(BaseModel):
     accion_estado: Optional[str] = None
     contexto_entorno: Optional[str] = None
     iluminacion_atmosfera: Optional[str] = None
+    paleta: Optional[str] = Field(
+        default=None, description="Paleta de color (ej. 'teal and amber'), bloque opcional después de iluminación"
+    )
     medio_estilo: Optional[str] = None
     lente_angulo: Optional[str] = None
     categoria: CategoriaEstetica
@@ -458,6 +532,11 @@ class SolicitudPrompt(BaseModel):
     p: Optional[str] = None
     sref: Optional[str] = None
     forzar_v8_2_en_anime: bool = False   # override consciente del fallback niji
+    intensidad: Optional[float] = Field(
+        default=None, ge=0.0, le=1.0,
+        description="Slider 0-1 que interpola stylize/chaos/weird dentro del rango "
+                    "sugerido de la categoría; None/0.5 = comportamiento default (midpoint)."
+    )
 
     # ═══ Parámetros de reproducibilidad — el usuario los fija, nunca Gemini ═══
     seed: Optional[int] = Field(default=None, ge=0, le=4294967295)
@@ -526,6 +605,7 @@ class OverridesTexto(BaseModel):
     accion_estado: Optional[str] = None
     contexto_entorno: Optional[str] = None
     iluminacion_atmosfera: Optional[str] = None
+    paleta: Optional[str] = None
     medio_estilo: Optional[str] = None
     lente_angulo: Optional[str] = None
     categoria: Optional[CategoriaEstetica] = None
@@ -534,6 +614,7 @@ class OverridesTexto(BaseModel):
     p: Optional[str] = None
     sref: Optional[str] = None
     forzar_v8_2_en_anime: Optional[bool] = None
+    intensidad: Optional[float] = Field(default=None, ge=0.0, le=1.0)
     seed: Optional[int] = None
     no: Optional[List[str]] = None
     stop: Optional[int] = None
@@ -596,6 +677,12 @@ def fusionar_vision_y_overrides(
         accion_estado=ov.accion_estado or vision.accion_estado_detectado,
         contexto_entorno=contexto_entorno,
         iluminacion_atmosfera=ov.iluminacion_atmosfera or vision.iluminacion_detectada,
+        # paleta_color_detectada NO es un medio/estilo (no compite con la
+        # categoría estética elegida como sí lo hace medio_estilo_detectado)
+        # — es una señal compositiva de bajo costo y alto valor para
+        # preservar identidad visual entre categorías, así que sí cae acá
+        # por fallback igual que iluminación/contexto.
+        paleta=ov.paleta or vision.paleta_color_detectada,
         # Solo el override EXPLÍCITO del usuario (ov.medio_estilo) alimenta el
         # prompt de salida — NUNCA vision.medio_estilo_detectado. El medio
         # original detectado (ej. "ilustración digital estilizada" en una
@@ -627,6 +714,7 @@ def fusionar_vision_y_overrides(
         forzar_v8_2_en_anime=(
             ov.forzar_v8_2_en_anime if ov.forzar_v8_2_en_anime is not None else False
         ),
+        intensidad=ov.intensidad,
         seed=ov.seed,
         no=ov.no,
         stop=ov.stop,
@@ -769,6 +857,36 @@ def _truncar_a_max_palabras(texto: str, max_palabras: int = 70) -> str:
     return truncado.strip()
 
 
+PRIORIDAD_BLOQUES = ["sujeto_rasgos", "accion", "contexto", "iluminacion", "paleta", "lente"]
+# lo último de la lista se sacrifica primero al truncar.
+
+
+def _ensamblar_con_presupuesto(bloques: dict, limite: int) -> tuple[str, List[str]]:
+    """D1: truncamiento por prioridad de bloque en vez de corte ciego de
+    palabras. Antes, _truncar_a_max_palabras cortaba a las N palabras con
+    un rfind(".") — podía eliminar la lente y media iluminación al azar,
+    sin decir qué se perdió. Acá se descartan bloques ENTEROS empezando
+    por el de menor prioridad (lente, luego paleta, luego iluminación...)
+    hasta entrar en el presupuesto.
+
+    sujeto_rasgos NUNCA se descarta entero (es lo que identifica la
+    escena); si sobrevive solo y aun así excede el límite, se recorta por
+    palabras como último recurso (mismo mecanismo que antes, acotado a
+    ese bloque)."""
+    descartados: List[str] = []
+    for clave in reversed(PRIORIDAD_BLOQUES[1:]):
+        total = sum(len((bloques.get(k) or "").split()) for k in PRIORIDAD_BLOQUES)
+        if total <= limite:
+            break
+        if bloques.get(clave):
+            bloques[clave] = None
+            descartados.append(clave)
+    cuerpo = ". ".join(bloques[k] for k in PRIORIDAD_BLOQUES if bloques.get(k))
+    if len(cuerpo.split()) > limite:
+        cuerpo = _truncar_a_max_palabras(cuerpo, limite)
+    return cuerpo, descartados
+
+
 def construir_prompt(sol: SolicitudPrompt) -> ResultadoPrompt:
     perfil = PERFILES[sol.categoria]
     warnings: List[str] = []
@@ -797,26 +915,42 @@ def construir_prompt(sol: SolicitudPrompt) -> ResultadoPrompt:
     # y el prompt nunca decía en palabras qué estilo se quería.
     medio_estilo = sol.medio_estilo or DESCRIPTOR_ESTILO.get(sol.categoria)
 
-    bloques = [
-        f"{sol.sujeto}, {rasgos_combinados}" if rasgos_combinados else sol.sujeto,
-        sol.accion_estado,
-        sol.contexto_entorno,
-        sol.iluminacion_atmosfera,
-        sol.lente_angulo,
-    ]
-    cuerpo = ". ".join(b.strip() for b in bloques if b and b.strip())
-    cuerpo, warns_legacy = _purgar_sintaxis_legacy(cuerpo)
-    warnings.extend(warns_legacy)
+    # D1: cada bloque se purga de sintaxis legacy por separado (antes se
+    # hacía sobre la cadena ya unida) para poder truncar por bloque entero
+    # más abajo sin volver a tocar el texto.
+    bloques_crudos = {
+        "sujeto_rasgos": f"{sol.sujeto}, {rasgos_combinados}" if rasgos_combinados else sol.sujeto,
+        "accion": sol.accion_estado,
+        "contexto": sol.contexto_entorno,
+        "iluminacion": sol.iluminacion_atmosfera,
+        # D4: paleta de color — señal barata y efectiva para preservar
+        # identidad visual entre categorías, capturada por visión pero
+        # descartada hasta ahora.
+        "paleta": f"palette: {sol.paleta}" if sol.paleta else None,
+        "lente": sol.lente_angulo,
+    }
+    bloques: dict = {}
+    for clave, valor in bloques_crudos.items():
+        if valor and valor.strip():
+            limpio, warns_legacy = _purgar_sintaxis_legacy(valor.strip())
+            bloques[clave] = limpio or None
+            warnings.extend(warns_legacy)
+        else:
+            bloques[clave] = None
 
-    # --- TRUNCAMIENTO DURO: nunca exceder 70 palabras ---
-    conteo_palabras = len(cuerpo.split())
+    cuerpo_completo = ". ".join(bloques[k] for k in PRIORIDAD_BLOQUES if bloques.get(k))
+
+    # --- TRUNCAMIENTO DURO: nunca exceder LIMITE_PALABRAS_SEGURO palabras ---
+    conteo_palabras = len(cuerpo_completo.split())
     if conteo_palabras > LIMITE_PALABRAS_SEGURO:
-        cuerpo = _truncar_a_max_palabras(cuerpo, LIMITE_PALABRAS_SEGURO)
+        cuerpo, descartados = _ensamblar_con_presupuesto(dict(bloques), LIMITE_PALABRAS_SEGURO)
+        detalle = f"Bloques descartados: {', '.join(descartados)}." if descartados else "Recorte por palabras dentro del sujeto (los demás bloques ya venían vacíos)."
         warnings.append(
-            f"Prompt truncado de {conteo_palabras} a {LIMITE_PALABRAS_SEGURO} palabras "
-            f"(doc: límite seguro para evitar Prompt Shortener). "
-            f"Priorizados: sujeto, rasgos físicos, acción."
+            f"Prompt truncado de {conteo_palabras} a {len(cuerpo.split())} palabras "
+            f"(doc: límite seguro para evitar Prompt Shortener). {detalle}"
         )
+    else:
+        cuerpo = cuerpo_completo
 
     # medio_estilo se agrega DESPUÉS del truncamiento (igual que el texto
     # incrustado más abajo) para que sobreviva siempre: es lo único que le
@@ -829,8 +963,24 @@ def construir_prompt(sol: SolicitudPrompt) -> ResultadoPrompt:
     if medio_estilo:
         cuerpo = cuerpo.rstrip(". ") + f". {medio_estilo}"
 
+    # D2: slider de intensidad — interpola stylize/chaos/weird dentro del
+    # rango sugerido de la categoría en vez de fijar siempre el midpoint.
+    # intensidad=0.5 (default) reproduce el midpoint de siempre para
+    # stylize; para chaos/weird, que antes tomaban directo el mínimo del
+    # rango sugerido, el midpoint por default es un cambio de comportamiento
+    # deliberado (un solo slider controla los tres ejes de forma coherente
+    # en vez de que chaos/weird queden fijos en su piso).
+    intensidad = sol.intensidad if sol.intensidad is not None else 0.5
+
+    def _interpolar(rango: Optional[tuple[int, int]]) -> int:
+        if not rango:
+            return 0
+        lo, hi = rango
+        return round(lo + intensidad * (hi - lo))
+
+    stylize_val = _interpolar((perfil.stylize_min, perfil.stylize_max))
+
     # --- render de texto tipográfico (doc: "Renderizado de Texto") ---
-    stylize_val = (perfil.stylize_min + perfil.stylize_max) // 2
     raw_val = bool(perfil.raw_obligatorio) if perfil.raw_obligatorio is not None else False
 
     if sol.texto_incrustado:
@@ -868,8 +1018,8 @@ def construir_prompt(sol: SolicitudPrompt) -> ResultadoPrompt:
         v=modelo_efectivo,
         resolucion=sol.modo,
         stylize=stylize_val,
-        chaos=(perfil.chaos_sugerido[0] if perfil.chaos_sugerido else 0),
-        weird=(perfil.weird_sugerido[0] if perfil.weird_sugerido else 0),
+        chaos=_interpolar(perfil.chaos_sugerido),
+        weird=_interpolar(perfil.weird_sugerido),
         raw=raw_val,
         exp=0,
         # Nunca un placeholder literal: si el perfil recomienda --p pero el

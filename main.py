@@ -8,7 +8,6 @@ import os
 import json
 import base64
 import logging
-import random
 import asyncio
 import hashlib
 import uuid
@@ -32,7 +31,7 @@ from mj_engine import (
     SolicitudPrompt, ResultadoPrompt, DescripcionVisual, OverridesTexto,
     CategoriaEstetica, Resolucion, ModeloMJ,
     construir_prompt, fusionar_vision_y_overrides, regenerar_en_estilos,
-    construir_variante_estilo_original,
+    construir_variante_estilo_original, categorias_vecinas,
 )
 from gemini_orquestador import (
     construir_payload_vision, procesar_respuesta_vision,
@@ -288,16 +287,15 @@ def _categorias_para_multi_estilo(
     """Categorías a usar en el flujo 'una imagen → N estilos'.
 
     La categoría que el usuario eligió en la UI SIEMPRE va primera e
-    incluida. Antes esto se armaba con random.sample() sobre las 10
-    categorías completas sin ninguna relación con la selección del usuario
-    — con 5 variantes pedidas, era perfectamente posible (y frecuente) que
-    la categoría elegida no apareciera en ninguna de las 5, y cuando sí
-    aparecía, no había garantía de que fuera la primera en mostrarse.
+    incluida, seguida de sus vecinas estéticas más cercanas (D3:
+    mj_engine.categorias_vecinas — tabla fija, sin random). Antes esto se
+    armaba con random.sample() sobre las 10 categorías completas: pedir
+    "N estilos" dos veces con la misma imagen y la misma categoría podía
+    devolver lotes completamente distintos, rompiendo la promesa de
+    determinismo del resto del motor.
     """
     seleccionada = overrides.categoria if overrides and overrides.categoria else cat_enum
-    otras = [c for c in CategoriaEstetica if c != seleccionada]
-    n_otras = min(max(n_estilos - 1, 0), len(otras))
-    return [seleccionada] + random.sample(otras, n_otras)
+    return categorias_vecinas(seleccionada, n_estilos)
 
 
 def _variante_estilo_original_dict(

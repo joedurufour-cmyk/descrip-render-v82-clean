@@ -1,10 +1,12 @@
 """
 test_mj_engine.py — Tests exhaustivos del motor determinístico.
-30 casos que validan: perfiles, parámetros, purga de legacy, HD/SD,
+37 casos que validan: perfiles, parámetros, purga de legacy, HD/SD,
 visión+overrides, regeneración multi-estilo, la variante de copia de
-estilo original, y los fixes de PR-1 (--p sin placeholder, seed/no/stop/
+estilo original, los fixes de PR-1 (--p sin placeholder, seed/no/stop/
 tile, seed compartida en multi-estilo, warning de niji no ruidoso,
-conteo_final).
+conteo_final), y PR-5/Fase D (truncamiento por prioridad de bloque,
+slider de intensidad, categorías vecinas determinísticas, paleta de
+color).
 """
 
 import sys
@@ -21,6 +23,8 @@ from mj_engine import (
     fusionar_vision_y_overrides,
     regenerar_en_estilos,
     construir_variante_estilo_original,
+    categorias_vecinas,
+    VECINOS_ESTETICOS,
 )
 
 fallos = []
@@ -346,6 +350,87 @@ check(r_v.conteo_final != r_v.conteo_palabras, "V: conteo_final y conteo_palabra
 print("V OK -> conteo_palabras:", r_v.conteo_palabras, "conteo_final:", r_v.conteo_final)
 
 # ═══════════════════════════════════════════════════════════
+# CASOS W-Z: PR-5 / Fase D (calidad del prompt)
+# ═══════════════════════════════════════════════════════════
+
+# --- Caso W: truncamiento por prioridad — descarta lente/paleta/iluminación
+# ANTES que sujeto/acción/contexto, y el warning nombra qué se descartó ---
+sujeto_w = " ".join(["subject"] * 40)
+accion_w = " ".join(["action"] * 30)
+contexto_w = " ".join(["context"] * 20)
+r_w = construir_prompt(SolicitudPrompt(
+    sujeto=sujeto_w,
+    accion_estado=accion_w,
+    contexto_entorno=contexto_w,
+    iluminacion_atmosfera="dramatic golden hour lighting",
+    paleta="teal and orange",
+    lente_angulo="85mm lens, shallow depth of field",
+    categoria=CategoriaEstetica.CINE,
+))
+check(sujeto_w in r_w.prompt_final, "W: sujeto (máxima prioridad) debe sobrevivir al truncamiento")
+check(accion_w in r_w.prompt_final, "W: acción (2da prioridad) debe sobrevivir")
+check("85mm lens" not in r_w.prompt_final, "W: lente (mínima prioridad) debe descartarse primero")
+check(any("Bloques descartados" in wmsg and "lente" in wmsg for wmsg in r_w.warnings), "W: el warning debe nombrar 'lente' como bloque descartado")
+print("W OK -> warnings:", [wmsg for wmsg in r_w.warnings if "descartad" in wmsg.lower()])
+
+# --- Caso W2: si SOLO sujeto_rasgos excede el límite, no hay bloques para
+# descartar -> cae al recorte por palabras de siempre (fallback), sin crashear ---
+sujeto_solo_largo = " ".join(["palabra"] * 150)
+r_w2 = construir_prompt(SolicitudPrompt(sujeto=sujeto_solo_largo, categoria=CategoriaEstetica.CINE))
+check(r_w2.conteo_final <= 100 + 20, f"W2: con solo sujeto largo, debe recortarse por palabras igual que antes (+medio_estilo que sobrevive aparte), dio {r_w2.conteo_final}")
+check(any("Recorte por palabras" in wmsg for wmsg in r_w2.warnings), "W2: el warning debe indicar que se usó el recorte por palabras (no había bloques para descartar)")
+print("W2 OK -> conteo_final:", r_w2.conteo_final)
+
+# --- Caso X: slider de intensidad — 0.0 da el mínimo del rango, 1.0 el máximo ---
+r_x_min = construir_prompt(SolicitudPrompt(sujeto="Ciudad futurista", categoria=CategoriaEstetica.CYBERPUNK_SCIFI, intensidad=0.0))
+r_x_max = construir_prompt(SolicitudPrompt(sujeto="Ciudad futurista", categoria=CategoriaEstetica.CYBERPUNK_SCIFI, intensidad=1.0))
+r_x_mid = construir_prompt(SolicitudPrompt(sujeto="Ciudad futurista", categoria=CategoriaEstetica.CYBERPUNK_SCIFI))  # default 0.5
+check(r_x_min.parametros.stylize == 300, f"X: intensidad=0.0 debe dar stylize mínimo (300), dio {r_x_min.parametros.stylize}")
+check(r_x_max.parametros.stylize == 500, f"X: intensidad=1.0 debe dar stylize máximo (500), dio {r_x_max.parametros.stylize}")
+check(r_x_mid.parametros.stylize == 400, f"X: sin intensidad (default 0.5) debe dar el midpoint (400) como siempre, dio {r_x_mid.parametros.stylize}")
+check(r_x_min.parametros.chaos == 10, f"X: intensidad=0.0 debe dar chaos mínimo (10), dio {r_x_min.parametros.chaos}")
+check(r_x_max.parametros.chaos == 20, f"X: intensidad=1.0 debe dar chaos máximo (20), dio {r_x_max.parametros.chaos}")
+print("X OK -> stylize min/mid/max:", r_x_min.parametros.stylize, r_x_mid.parametros.stylize, r_x_max.parametros.stylize,
+      "| chaos min/max:", r_x_min.parametros.chaos, r_x_max.parametros.chaos)
+
+# --- Caso Y: categorías vecinas — determinístico, la elegida siempre primera,
+# sin duplicados, mismo resultado en llamadas repetidas ---
+vecinas_1 = categorias_vecinas(CategoriaEstetica.CINE, 4)
+vecinas_2 = categorias_vecinas(CategoriaEstetica.CINE, 4)
+check(vecinas_1 == vecinas_2, "Y: categorias_vecinas debe ser 100% determinístico (mismo input, mismo output siempre)")
+check(vecinas_1[0] == CategoriaEstetica.CINE, "Y: la categoría elegida debe ir siempre primera")
+check(len(vecinas_1) == 4, f"Y: pedir 4 estilos debe devolver 4 categorías, dio {len(vecinas_1)}")
+check(len(set(vecinas_1)) == 4, "Y: no debe haber categorías repetidas en el lote")
+check(set(vecinas_1[1:]) <= set(VECINOS_ESTETICOS[CategoriaEstetica.CINE]), "Y: las demás deben salir de la tabla de vecinos, no de random.sample")
+print("Y OK ->", [c.value for c in vecinas_1])
+
+# --- Caso Z: paleta de color — aparece en el prompt después de iluminación,
+# vía override explícito y vía fallback de visión ---
+r_z = construir_prompt(SolicitudPrompt(
+    sujeto="Retrato en la calle",
+    iluminacion_atmosfera="neon night lighting",
+    paleta="teal and amber",
+    categoria=CategoriaEstetica.CINE,
+))
+check("palette: teal and amber" in r_z.prompt_final, "Z: paleta explícita debe aparecer en el prompt final")
+idx_ilum = r_z.prompt_final.find("neon night lighting")
+idx_paleta = r_z.prompt_final.find("palette: teal and amber")
+check(0 <= idx_ilum < idx_paleta, "Z: paleta debe ir DESPUÉS de iluminación en el orden del prompt")
+print("Z OK ->", r_z.prompt_final)
+
+# --- Caso Z2: paleta detectada por visión se hereda si no hay override explícito ---
+vision_paleta = DescripcionVisual(
+    sujeto_detectado="Callejón lluvioso",
+    paleta_color_detectada="teal and magenta neon",
+    categoria_sugerida=CategoriaEstetica.CYBERPUNK_SCIFI,
+)
+sol_z2 = fusionar_vision_y_overrides(vision_paleta)
+check(sol_z2.paleta == "teal and magenta neon", "Z2: paleta detectada por visión debe heredarse sin override")
+r_z2 = construir_prompt(sol_z2)
+check("teal and magenta neon" in r_z2.prompt_final, "Z2: paleta heredada de visión debe llegar al prompt final")
+print("Z2 OK ->", r_z2.prompt_final)
+
+# ═══════════════════════════════════════════════════════════
 # RESUMEN
 # ═══════════════════════════════════════════════════════════
 
@@ -362,5 +447,5 @@ if __name__ == "__main__":
             print(f"  - {f}")
         sys.exit(1)
     else:
-        print("✅ TODOS LOS TESTS PASARON (30/30)")
+        print("✅ TODOS LOS TESTS PASARON (37/37)")
         sys.exit(0)
