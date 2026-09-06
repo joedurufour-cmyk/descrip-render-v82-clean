@@ -9,9 +9,14 @@ import json
 import base64
 import logging
 import random
+import asyncio
+import hashlib
+import uuid
+from collections import OrderedDict
 from typing import Optional
 from fastapi import FastAPI, File, UploadFile, Form, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
+from starlette.concurrency import run_in_threadpool
 from pydantic import ValidationError
 from dotenv import load_dotenv
 from PIL import Image
@@ -70,7 +75,14 @@ GEMINI_MODEL = os.getenv("GEMINI_MODEL", "gemini-3.7-flash")
 gemini_client = None
 if GEMINI_API_KEY:
     try:
-        gemini_client = genai.Client(api_key=GEMINI_API_KEY)
+        gemini_client = genai.Client(
+            api_key=GEMINI_API_KEY,
+            # Sin timeout, una llamada a Gemini que se cuelga (red, modelo
+            # saturado) bloquea el worker indefinidamente — en un uvicorn de
+            # un solo worker (Render free tier) eso también deja de
+            # responder /health mientras tanto.
+            http_options=types.HttpOptions(timeout=25_000),  # ms
+        )
     except Exception as e:
         print(f"ERROR: No se pudo configurar Gemini client: {e}")
 else:
@@ -133,15 +145,22 @@ def _img_to_bytes(image_bytes: bytes) -> bytes:
 _GEMINI_CODIGOS_TRANSITORIOS = {429, 503}  # 429 rate limit, 503 modelo saturado
 
 
-def _generate_content_con_reintentos(max_intentos: int = 3, **kwargs):
-    """Envoltorio de gemini_client.models.generate_content() con reintento y
-    backoff exponencial (1s/2s) ante errores transitorios de la API de Gemini
-    (429 rate limit, 503 "currently experiencing high demand"). Estos códigos
-    suelen resolverse solos en segundos; sin reintento, cualquier pico de
-    demanda de Google se propaga directo como error 500 al usuario."""
+async def _generate_content_con_reintentos(max_intentos: int = 3, **kwargs):
+    """Envoltorio async de gemini_client.aio.models.generate_content() con
+    reintento y backoff exponencial (1s/2s) ante errores transitorios de la
+    API de Gemini (429 rate limit, 503 "currently experiencing high
+    demand"). Estos códigos suelen resolverse solos en segundos; sin
+    reintento, cualquier pico de demanda de Google se propaga directo como
+    error 500 al usuario.
+
+    Async (antes era sync con time.sleep dentro de una función async
+    "vestida" de sync): en uvicorn de un solo worker, una llamada sync
+    bloqueaba el event loop completo mientras esperaba a Gemini, así que
+    /health tampoco respondía y ninguna otra request podía avanzar en
+    paralelo."""
     for intento in range(1, max_intentos + 1):
         try:
-            return gemini_client.models.generate_content(**kwargs)
+            return await gemini_client.aio.models.generate_content(**kwargs)
         except genai_errors.APIError as e:
             if e.code not in _GEMINI_CODIGOS_TRANSITORIOS or intento == max_intentos:
                 raise
@@ -150,19 +169,60 @@ def _generate_content_con_reintentos(max_intentos: int = 3, **kwargs):
                 f"Gemini {e.code} (intento {intento}/{max_intentos}), "
                 f"reintentando en {espera}s..."
             )
-            time.sleep(espera)
+            await asyncio.sleep(espera)
 
 
-def _call_gemini_vision(image_bytes: bytes, genero_objetivo: Optional[str] = None) -> str:
+# --- Caché de visión: misma imagen (+ mismo genero_objetivo) = misma
+# DescripcionVisual. Clave = sha256 de los bytes YA normalizados (después
+# de _img_to_bytes: mismo downscale/formato/calidad siempre que la imagen
+# de origen sea la misma) + genero_objetivo. Nivel de memoria del proceso:
+# se pierde en cada cold start de Render, pero cubre el caso muy común de
+# "generar de nuevo con otra categoría/override sobre la misma imagen" sin
+# gastar una llamada a Gemini de vuelta. Cap simple con OrderedDict (FIFO)
+# para no crecer sin límite en un proceso de larga vida.
+_VISION_CACHE_MAX = 500
+_vision_cache: "OrderedDict[str, str]" = OrderedDict()
+
+
+def _vision_cache_key(image_bytes: bytes, genero_objetivo: Optional[str]) -> str:
+    return f"{hashlib.sha256(image_bytes).hexdigest()}:{genero_objetivo or ''}"
+
+
+def _vision_cache_get(key: str) -> Optional[str]:
+    if key not in _vision_cache:
+        return None
+    _vision_cache.move_to_end(key)
+    return _vision_cache[key]
+
+
+def _vision_cache_put(key: str, value: str) -> None:
+    _vision_cache[key] = value
+    _vision_cache.move_to_end(key)
+    if len(_vision_cache) > _VISION_CACHE_MAX:
+        _vision_cache.popitem(last=False)
+
+
+async def _call_gemini_vision(image_bytes: bytes, genero_objetivo: Optional[str] = None) -> str:
     """Etapa 0: Gemini describe imagen → JSON DescripcionVisual.
 
     genero_objetivo (opcional): si el usuario eligió un chip de "Género" en
     la Jerarquía Física, se le pide a Gemini que reinterprete sujeto/rasgos
     con esa presentación en esta misma llamada — ver construir_instruccion_
     vision() en gemini_orquestador.py para el porqué de este enfoque en vez
-    de un reemplazo de palabras después."""
+    de un reemplazo de palabras después.
+
+    Cachea por hash de imagen + genero_objetivo (ver _vision_cache_*):
+    misma imagen = misma descripción, salvo que se pida otra presentación
+    de género."""
     import traceback
     from google.genai import types
+
+    cache_key = _vision_cache_key(image_bytes, genero_objetivo)
+    cached = _vision_cache_get(cache_key)
+    if cached is not None:
+        logger.info("Vision cache hit")
+        return cached
+
     try:
         schema = _limpiar_schema_gemini(DescripcionVisual.model_json_schema())
 
@@ -177,7 +237,7 @@ def _call_gemini_vision(image_bytes: bytes, genero_objetivo: Optional[str] = Non
 
         instruccion = construir_instruccion_vision(genero_objetivo)
         logger.info(f"Calling Gemini vision with model: {GEMINI_MODEL} (genero_objetivo={genero_objetivo})")
-        response = _generate_content_con_reintentos(
+        response = await _generate_content_con_reintentos(
             model=GEMINI_MODEL,
             contents=[content],
             config=types.GenerateContentConfig(
@@ -186,6 +246,7 @@ def _call_gemini_vision(image_bytes: bytes, genero_objetivo: Optional[str] = Non
                 response_schema=schema,
             )
         )
+        _vision_cache_put(cache_key, response.text)
         return response.text
     except Exception as e:
         logger.error(f"Gemini vision error: {e}")
@@ -193,13 +254,13 @@ def _call_gemini_vision(image_bytes: bytes, genero_objetivo: Optional[str] = Non
         raise
 
 
-def _call_gemini_texto(idea: str) -> str:
+async def _call_gemini_texto(idea: str) -> str:
     """Etapa 1: Gemini decompone texto → JSON SolicitudPrompt."""
     import traceback
     try:
         payload = construir_payload_texto(idea)
         logger.info(f"Calling Gemini text with model: {GEMINI_MODEL}")
-        response = _generate_content_con_reintentos(
+        response = await _generate_content_con_reintentos(
             model=GEMINI_MODEL,
             contents=payload["contents"],
             config={
@@ -386,8 +447,8 @@ async def generate_legacy(
 
     # === ETAPA 0: VISIÓN ===
     try:
-        img_bytes = _img_to_bytes(image_bytes)
-        vision_json = _call_gemini_vision(img_bytes)
+        img_bytes = await run_in_threadpool(_img_to_bytes, image_bytes)
+        vision_json = await _call_gemini_vision(img_bytes)
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error en visión: {str(e)}")
 
@@ -409,11 +470,18 @@ async def vision_pure(
     if not gemini_client:
         raise HTTPException(status_code=503, detail="Gemini API no configurada.")
 
+    request_id = str(uuid.uuid4())
+    t0 = time.perf_counter()
     try:
         image_bytes = await image.read()
-        img_bytes = _img_to_bytes(image_bytes)
-        vision_json = _call_gemini_vision(img_bytes)
-        return json.loads(vision_json)
+        img_bytes = await run_in_threadpool(_img_to_bytes, image_bytes)
+        vision_json = await _call_gemini_vision(img_bytes)
+        vision_ms = round((time.perf_counter() - t0) * 1000)
+        logger.info(json.dumps({"request_id": request_id, "etapa": "vision", "vision_ms": vision_ms}))
+        data = json.loads(vision_json)
+        data["request_id"] = request_id
+        data["timings"] = {"vision_ms": vision_ms}
+        return data
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
@@ -434,9 +502,11 @@ async def generate_v2(
     Endpoint V2 — arquitectura completa de 3 etapas.
     Soporta: imagen+overrides, solo texto, vision previa, multi-estilo.
     """
+    request_id = str(uuid.uuid4())
+    timings: dict = {}
     try:
         logger.info(f"generate_v2 called: image={image.filename if image else None}, idea_texto={bool(idea_texto)}, vision_json={bool(vision_json)}")
-        
+
         if not gemini_client:
             raise HTTPException(status_code=503, detail="Gemini API no configurada.")
 
@@ -482,20 +552,29 @@ async def generate_v2(
             genero_objetivo = overrides.genero.value if overrides and overrides.genero else None
             try:
                 image_bytes = await image.read()
-                img_bytes = _img_to_bytes(image_bytes)
-                vision_data = _call_gemini_vision(img_bytes, genero_objetivo=genero_objetivo)
+                t0 = time.perf_counter()
+                img_bytes = await run_in_threadpool(_img_to_bytes, image_bytes)
+                vision_data = await _call_gemini_vision(img_bytes, genero_objetivo=genero_objetivo)
+                timings["vision_ms"] = round((time.perf_counter() - t0) * 1000)
             except Exception as e:
                 logger.error(f"Vision error: {e}")
                 raise HTTPException(status_code=500, detail=f"Error en visión: {str(e)}")
 
             vision_dict = json.loads(vision_data)
 
+            t1 = time.perf_counter()
             if n_estilos > 1 or incluir_estilo_original:
                 vision = DescripcionVisual.model_validate(vision_dict)
                 cats = _categorias_para_multi_estilo(overrides, cat_enum, n_estilos)
                 resultados = regenerar_en_estilos(vision, cats, overrides, modo=modo_enum)
+                if incluir_estilo_original:
+                    variante_original = _variante_estilo_original_dict(vision, overrides, modo_enum)
+                timings["engine_ms"] = round((time.perf_counter() - t1) * 1000)
+                logger.info(json.dumps({"request_id": request_id, "etapa": "generate_v2/imagen/multi-estilo", **timings}))
                 response = {
                     "modo": "multi-estilo",
+                    "request_id": request_id,
+                    "timings": timings,
                     "source_analysis": vision_dict,
                     "vision_raw": vision_dict,
                     "resultados": {
@@ -509,14 +588,16 @@ async def generate_v2(
                     }
                 }
                 if incluir_estilo_original:
-                    response["variante_estilo_original"] = _variante_estilo_original_dict(
-                        vision, overrides, modo_enum
-                    )
+                    response["variante_estilo_original"] = variante_original
                 return response
             else:
                 resultado = procesar_respuesta_vision(vision_data, overrides, modo=modo_enum)
+                timings["engine_ms"] = round((time.perf_counter() - t1) * 1000)
+                logger.info(json.dumps({"request_id": request_id, "etapa": "generate_v2/imagen/single", **timings}))
                 return {
                     "modo": "single",
+                    "request_id": request_id,
+                    "timings": timings,
                     "source_analysis": vision_dict,
                     "vision_raw": vision_dict,
                     "prompt": resultado.prompt_final,
@@ -531,10 +612,17 @@ async def generate_v2(
         elif idea_texto:
             logger.info(f"Processing text flow: {idea_texto[:50]}...")
             try:
-                texto_data = _call_gemini_texto(idea_texto)
+                t0 = time.perf_counter()
+                texto_data = await _call_gemini_texto(idea_texto)
+                timings["decompose_ms"] = round((time.perf_counter() - t0) * 1000)
+                t1 = time.perf_counter()
                 resultado = procesar_respuesta_texto(texto_data, overrides, modo=modo_enum)
+                timings["engine_ms"] = round((time.perf_counter() - t1) * 1000)
+                logger.info(json.dumps({"request_id": request_id, "etapa": "generate_v2/texto", **timings}))
                 return {
                     "modo": "texto",
+                    "request_id": request_id,
+                    "timings": timings,
                     "prompt": resultado.prompt_final,
                     "parametros": resultado.parametros.model_dump(),
                     "warnings": resultado.warnings,
@@ -549,12 +637,18 @@ async def generate_v2(
         # --- Flujo con vision previa ---
         elif vision_json:
             logger.info("Processing vision_json flow")
+            t1 = time.perf_counter()
             if n_estilos > 1 or incluir_estilo_original:
                 vision = DescripcionVisual.model_validate_json(vision_json)
                 cats = _categorias_para_multi_estilo(overrides, cat_enum, n_estilos)
                 resultados = regenerar_en_estilos(vision, cats, overrides, modo=modo_enum)
+                if incluir_estilo_original:
+                    variante_original = _variante_estilo_original_dict(vision, overrides, modo_enum)
+                timings["engine_ms"] = round((time.perf_counter() - t1) * 1000)
                 response = {
                     "modo": "multi-estilo",
+                    "request_id": request_id,
+                    "timings": timings,
                     "resultados": {
                         k.value: {
                             "prompt": v.prompt_final,
@@ -566,14 +660,15 @@ async def generate_v2(
                     }
                 }
                 if incluir_estilo_original:
-                    response["variante_estilo_original"] = _variante_estilo_original_dict(
-                        vision, overrides, modo_enum
-                    )
+                    response["variante_estilo_original"] = variante_original
                 return response
             else:
                 resultado = procesar_respuesta_vision(vision_json, overrides, modo=modo_enum)
+                timings["engine_ms"] = round((time.perf_counter() - t1) * 1000)
                 return {
                     "modo": "vision-previa",
+                    "request_id": request_id,
+                    "timings": timings,
                     "prompt": resultado.prompt_final,
                     "parametros": resultado.parametros.model_dump(),
                     "warnings": resultado.warnings,
