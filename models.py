@@ -9,15 +9,6 @@ class PhysiqueLevel(str, Enum):
     ULTRA = "ultra"
 
 
-class StylePreset(str, Enum):
-    PHOTOREALISTIC = "photorealistic"
-    CINEMATIC = "cinematic"
-    CGI = "cgi"
-    COMIC = "comic"
-    ANIME = "anime"
-    WILDCARD = "wildcard"
-
-
 class TransformRequest(BaseModel):
     physique: PhysiqueLevel = Field(..., description="Nivel de transformacion fisica")
     packs: int = Field(8, ge=4, le=12, description="Numero de abdominales visibles")

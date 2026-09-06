@@ -20,6 +20,7 @@ Autor del contrato: Claude (Anthropic), para DURBAR ASESORES / SIGMA-THEORY.
 from __future__ import annotations
 from enum import Enum
 from typing import Optional, List
+import random
 import re
 from pydantic import BaseModel, Field, field_validator, model_validator
 
@@ -395,7 +396,12 @@ class ParametrosMJ(BaseModel):
     # ---- doc: niji es modelo independiente, NO combinable con v8.x ---
     @model_validator(mode="after")
     def _validar_niji_exclusivo(self) -> "ParametrosMJ":
-        if self.v == ModeloMJ.NIJI_7 and (self.stylize != 100 or self.raw or self.exp > 0):
+        # stylize!=100 se sacó de esta condición: el perfil anime pone
+        # midpoint 250 SIEMPRE, así que con stylize en la condición este
+        # warning disparaba en el 100% de los prompts anime (fatiga de
+        # warnings = nadie los lee). Lo que realmente no interopera entre
+        # niji y v8.x es raw/exp, no el valor de stylize en sí.
+        if self.v == ModeloMJ.NIJI_7 and (self.raw or self.exp > 0):
             self._agregar_warning(
                 "Niji 7 es una familia de modelo independiente: los parámetros "
                 "estéticos ajustados para V8.1 (stylize/raw/exp) no tienen "
@@ -452,7 +458,13 @@ class SolicitudPrompt(BaseModel):
     p: Optional[str] = None
     sref: Optional[str] = None
     forzar_v8_2_en_anime: bool = False   # override consciente del fallback niji
-    
+
+    # ═══ Parámetros de reproducibilidad — el usuario los fija, nunca Gemini ═══
+    seed: Optional[int] = Field(default=None, ge=0, le=4294967295)
+    no: Optional[List[str]] = Field(default=None, description="Elementos a excluir (--no)")
+    stop: Optional[int] = Field(default=None, ge=10, le=100)
+    tile: bool = False
+
     # ═══ JERARQUÍA FÍSICA (ABDOMEN FORGE v1.2+) ═══
     nivel_abdominal: Optional[NivelAbdominal] = None
     proporcion: Optional[PerfilProporcion] = None
@@ -522,6 +534,10 @@ class OverridesTexto(BaseModel):
     p: Optional[str] = None
     sref: Optional[str] = None
     forzar_v8_2_en_anime: Optional[bool] = None
+    seed: Optional[int] = None
+    no: Optional[List[str]] = None
+    stop: Optional[int] = None
+    tile: Optional[bool] = None
     # Jerarquía física overrides
     nivel_abdominal: Optional[NivelAbdominal] = None
     proporcion: Optional[PerfilProporcion] = None
@@ -611,6 +627,10 @@ def fusionar_vision_y_overrides(
         forzar_v8_2_en_anime=(
             ov.forzar_v8_2_en_anime if ov.forzar_v8_2_en_anime is not None else False
         ),
+        seed=ov.seed,
+        no=ov.no,
+        stop=ov.stop,
+        tile=ov.tile if ov.tile is not None else False,
         # Propagar jerarquía física
         nivel_abdominal=ov.nivel_abdominal,
         proporcion=ov.proporcion,
@@ -637,13 +657,24 @@ def regenerar_en_estilos(
     lo haya fijado explícitamente vía overrides.medio_estilo. De lo contrario
     ese medio original quedaría incrustado en el prompt de CADA categoría
     destino, contradiciendo estilos distintos al original (ej. forzar "anime"
-    dentro de un prompt de pintura clásica o fotorrealismo)."""
+    dentro de un prompt de pintura clásica o fotorrealismo).
+
+    SEED COMPARTIDA: si el usuario no fija overrides.seed, se genera UNA sola
+    semilla aleatoria y se propaga a las N variantes. Sin esto, cada categoría
+    salía con una seed aleatoria distinta de Midjourney y las N imágenes no
+    compartían composición — comparar "el mismo encuadre en 3 estilos" era
+    imposible aunque el prompt textual sí fuera consistente. Con la seed
+    fija, las N variantes son una comparación A/B limpia de solo el estilo."""
     resultados = {}
     medio_explicito = overrides.medio_estilo if overrides else None
+    seed_compartida = (
+        overrides.seed if overrides and overrides.seed is not None
+        else random.randint(0, 4294967295)
+    )
     for cat in categorias_destino:
         ov_cat = (
-            overrides.model_copy(update={"categoria": cat}) if overrides
-            else OverridesTexto(categoria=cat)
+            overrides.model_copy(update={"categoria": cat, "seed": seed_compartida}) if overrides
+            else OverridesTexto(categoria=cat, seed=seed_compartida)
         )
         sol = fusionar_vision_y_overrides(vision, ov_cat, modo=modo)
         if not medio_explicito:
@@ -681,7 +712,12 @@ class ResultadoPrompt(BaseModel):
     parametros: ParametrosMJ
     perfil_aplicado: CategoriaEstetica
     warnings: List[str]
-    conteo_palabras: int
+    conteo_palabras: int   # conteo ANTES de truncar (dispara el warning de Prompt Shortener)
+    conteo_final: int      # conteo del cuerpo REAL que ve Midjourney: después de
+                            # truncar y de agregar medio_estilo/texto_incrustado
+                            # (que sobreviven al truncamiento a propósito).
+                            # conteo_palabras solo mide el riesgo de truncar; esto
+                            # mide lo que efectivamente se envía.
     modelo_efectivo: ModeloMJ
 
 
@@ -804,7 +840,10 @@ def construir_prompt(sol: SolicitudPrompt) -> ResultadoPrompt:
                 f"Texto incrustado tiene {n_pal} palabras; doc recomienda 2-4 "
                 f"para máxima fidelidad tipográfica."
             )
-        cuerpo += f', letrero que dice "{sol.texto_incrustado}"'
+        # En inglés: el resto del prompt se redacta en inglés (regla 8 del
+        # propio SYSTEM_INSTRUCTION de decomposición) — mezclar español acá
+        # contradecía esa regla en el propio motor determinístico.
+        cuerpo += f', with the text "{sol.texto_incrustado}" clearly legible'
         # doc: renderizado de texto exige raw o stylize muy bajo, casi imperativo
         if not raw_val:
             raw_val = True
@@ -818,7 +857,11 @@ def construir_prompt(sol: SolicitudPrompt) -> ResultadoPrompt:
     if modelo_efectivo == ModeloMJ.NIJI_7:
         raw_val = False   # doc: niji no opera con raw de la familia V8.x
 
-    # Nota: conteo y truncamiento de palabras ya aplicados arriba
+    # conteo_final: cuántas palabras del CUERPO ve Midjourney realmente,
+    # después de truncar y de agregar medio_estilo/texto_incrustado (que
+    # sobreviven al truncamiento a propósito). conteo_palabras (arriba) mide
+    # el riesgo de activar el Prompt Shortener; este mide lo que se envía.
+    conteo_final = len(cuerpo.split())
 
     params = ParametrosMJ(
         ar=sol.ar,
@@ -829,10 +872,24 @@ def construir_prompt(sol: SolicitudPrompt) -> ResultadoPrompt:
         weird=(perfil.weird_sugerido[0] if perfil.weird_sugerido else 0),
         raw=raw_val,
         exp=0,
-        p=sol.p or (None if not perfil.p_recomendado else "<CODIGO_P_USUARIO>"),
+        # Nunca un placeholder literal: si el perfil recomienda --p pero el
+        # usuario no puso uno, se avisa por warning en vez de emitir
+        # "--p <CODIGO_P_USUARIO>" al prompt final (Midjourney lo rechaza
+        # tal cual, no es un marcador que el usuario vaya a completar ahí).
+        p=sol.p,
         sref=sol.sref,
+        seed=sol.seed,
+        stop=sol.stop if sol.stop is not None else 100,
+        tile=sol.tile,
+        no=sol.no or [],
     )
     warnings.extend(params.warnings)
+
+    if perfil.p_recomendado and not sol.p:
+        warnings.append(
+            "Categoría editorial: se recomienda --p <tu código de "
+            "personalización>; añádelo en Overrides."
+        )
 
     # --- ensamblar string final de parámetros ---
     partes_param = [f"--ar {params.ar}"]
@@ -847,6 +904,14 @@ def construir_prompt(sol: SolicitudPrompt) -> ResultadoPrompt:
         partes_param.append(f"--p {params.p}")
     if params.sref:
         partes_param.append(f"--sref {params.sref}")
+    if params.seed is not None:
+        partes_param.append(f"--seed {params.seed}")
+    if params.no:
+        partes_param.append(f"--no {', '.join(params.no)}")
+    if params.stop < 100:
+        partes_param.append(f"--stop {params.stop}")
+    if params.tile:
+        partes_param.append("--tile")
     if modelo_efectivo == ModeloMJ.NIJI_7:
         partes_param.append("--niji 7")
     else:
@@ -860,5 +925,6 @@ def construir_prompt(sol: SolicitudPrompt) -> ResultadoPrompt:
         perfil_aplicado=sol.categoria,
         warnings=warnings,
         conteo_palabras=conteo_palabras,
+        conteo_final=conteo_final,
         modelo_efectivo=modelo_efectivo,
     )

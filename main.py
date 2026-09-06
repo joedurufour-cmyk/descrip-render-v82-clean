@@ -55,7 +55,11 @@ app = FastAPI(
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
-    allow_credentials=True,
+    # allow_credentials=True + allow_origins=["*"] es una combinación inválida
+    # per spec (CORS no permite credenciales sobre un origen wildcard); esta
+    # app no manda cookies/credenciales en ningún fetch, así que no hay nada
+    # que preservar y False es lo correcto.
+    allow_credentials=False,
     allow_methods=["*"],
     allow_headers=["*"],
 )
@@ -107,11 +111,22 @@ def mapear_transform_a_overrides(transform: TransformRequest, ar: str = "1:1") -
     )
 
 
+MAX_LADO = 1280  # suficiente para OCR/rasgos; Gemini tokeniza por tiles, así
+# que una foto de 4000px cuesta varias veces más tokens que una de 1280px
+# sin ganar nada para descripción. Subir a 1536 si se nota pérdida en texto fino.
+
+
 def _img_to_bytes(image_bytes: bytes) -> bytes:
-    """Convierte bytes de imagen ya leídos a bytes JPEG."""
+    """Convierte bytes de imagen ya leídos a JPEG RGB con downscale a MAX_LADO.
+
+    Image.save(format="JPEG") sobre una imagen en modo RGBA (PNG/WebP con
+    canal alfa) lanza `OSError: cannot write mode RGBA as JPEG` — .convert
+    ("RGB") aplana alfa/paleta/CMYK antes de guardar."""
     pil_image = Image.open(io.BytesIO(image_bytes))
+    pil_image = pil_image.convert("RGB")
+    pil_image.thumbnail((MAX_LADO, MAX_LADO), Image.LANCZOS)
     buffered = io.BytesIO()
-    pil_image.save(buffered, format="JPEG")
+    pil_image.save(buffered, format="JPEG", quality=85, optimize=True)
     return buffered.getvalue()
 
 
@@ -229,6 +244,7 @@ def _variante_estilo_original_dict(
         "prompt": v.prompt_final,
         "parametros": v.parametros.model_dump(),
         "warnings": v.warnings,
+        "conteo_final": v.conteo_final,
         "categoria_base": v.perfil_aplicado.value,
     }
 
@@ -297,9 +313,14 @@ async def health_check():
 
 @app.get("/debug")
 async def debug_info():
-    """Endpoint de debug — muestra exactamente qué código está corriendo."""
-    import os, subprocess, sys
-    
+    """Endpoint de debug — muestra exactamente qué código está corriendo.
+    Gateado por env var: expone listado de archivos y commit git, no debe
+    quedar accesible públicamente en producción por defecto."""
+    if os.getenv("DEBUG_ENDPOINT") != "1":
+        raise HTTPException(status_code=404)
+
+    import subprocess, sys
+
     # Intentar obtener commit git
     try:
         commit = subprocess.check_output(
@@ -482,6 +503,7 @@ async def generate_v2(
                             "prompt": v.prompt_final,
                             "parametros": v.parametros.model_dump(),
                             "warnings": v.warnings,
+                            "conteo_final": v.conteo_final,
                         }
                         for k, v in resultados.items()
                     }
@@ -500,6 +522,7 @@ async def generate_v2(
                     "prompt": resultado.prompt_final,
                     "parametros": resultado.parametros.model_dump(),
                     "warnings": resultado.warnings,
+                    "conteo_final": resultado.conteo_final,
                     "perfil": resultado.perfil_aplicado.value,
                     "modelo": resultado.modelo_efectivo.value,
                 }
@@ -515,6 +538,7 @@ async def generate_v2(
                     "prompt": resultado.prompt_final,
                     "parametros": resultado.parametros.model_dump(),
                     "warnings": resultado.warnings,
+                    "conteo_final": resultado.conteo_final,
                     "perfil": resultado.perfil_aplicado.value,
                     "modelo": resultado.modelo_efectivo.value,
                 }
@@ -536,6 +560,7 @@ async def generate_v2(
                             "prompt": v.prompt_final,
                             "parametros": v.parametros.model_dump(),
                             "warnings": v.warnings,
+                            "conteo_final": v.conteo_final,
                         }
                         for k, v in resultados.items()
                     }
@@ -552,6 +577,7 @@ async def generate_v2(
                     "prompt": resultado.prompt_final,
                     "parametros": resultado.parametros.model_dump(),
                     "warnings": resultado.warnings,
+                    "conteo_final": resultado.conteo_final,
                 }
 
         else:

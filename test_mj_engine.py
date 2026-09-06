@@ -1,8 +1,10 @@
 """
 test_mj_engine.py — Tests exhaustivos del motor determinístico.
-20 casos que validan: perfiles, parámetros, purga de legacy, HD/SD,
-visión+overrides, regeneración multi-estilo, y la variante de copia de
-estilo original.
+30 casos que validan: perfiles, parámetros, purga de legacy, HD/SD,
+visión+overrides, regeneración multi-estilo, la variante de copia de
+estilo original, y los fixes de PR-1 (--p sin placeholder, seed/no/stop/
+tile, seed compartida en multi-estilo, warning de niji no ruidoso,
+conteo_final).
 """
 
 import sys
@@ -266,6 +268,84 @@ check("fotografía digital" not in r_q3.prompt_final, "Q3: medio detectado no de
 print("Q3 OK ->", r_q3.prompt_final)
 
 # ═══════════════════════════════════════════════════════════
+# CASOS R-V: fixes de PR-1 (bugs y fugas del contrato)
+# ═══════════════════════════════════════════════════════════
+
+# --- Caso R: --p nunca se emite como placeholder literal; se avisa por warning ---
+r_r = construir_prompt(SolicitudPrompt(
+    sujeto="Modelo de alta costura en pasarela",
+    categoria=CategoriaEstetica.EDITORIAL_MODA,  # p_recomendado=True, sin p explícito
+))
+check("<CODIGO_P_USUARIO>" not in r_r.prompt_final, "R: el prompt final NUNCA debe contener el placeholder literal de --p")
+check("--p" not in r_r.prompt_final, "R: sin p explícito, --p no debe aparecer en absoluto")
+check(any("se recomienda --p" in w for w in r_r.warnings), "R: debe avisar por warning que --p es recomendado")
+print("R OK ->", r_r.prompt_final, "| warnings:", r_r.warnings)
+
+# --- Caso R2: con p explícito, editorial no debe advertir ---
+r_r2 = construir_prompt(SolicitudPrompt(
+    sujeto="Modelo de alta costura en pasarela",
+    categoria=CategoriaEstetica.EDITORIAL_MODA,
+    p="8a3m9z",
+))
+check("--p 8a3m9z" in r_r2.prompt_final, "R2: --p explícito debe emitirse tal cual")
+check(not any("se recomienda --p" in w for w in r_r2.warnings), "R2: con p explícito no debe advertir")
+print("R2 OK ->", r_r2.prompt_final)
+
+# --- Caso S: seed/no/stop/tile se ensamblan al prompt final (antes se validaban y se descartaban) ---
+r_s = construir_prompt(SolicitudPrompt(
+    sujeto="Retrato de estudio",
+    categoria=CategoriaEstetica.FOTOREALISMO_RETRATO,
+    seed=123456,
+    no=["blurry", "text"],
+    stop=80,
+    tile=True,
+))
+check("--seed 123456" in r_s.prompt_final, "S: --seed debe aparecer en el prompt final")
+check("--no blurry, text" in r_s.prompt_final, "S: --no debe listar los elementos separados por coma")
+check("--stop 80" in r_s.prompt_final, "S: --stop <100 debe aparecer explícito")
+check("--tile" in r_s.prompt_final, "S: --tile debe aparecer cuando está activo")
+print("S OK ->", r_s.prompt_final)
+
+# --- Caso S2: stop=100 (default) y tile=False no deben ensuciar el prompt ---
+r_s2 = construir_prompt(SolicitudPrompt(sujeto="Retrato de estudio", categoria=CategoriaEstetica.FOTOREALISMO_RETRATO))
+check("--stop" not in r_s2.prompt_final, "S2: --stop 100 (default) no debe emitirse")
+check("--tile" not in r_s2.prompt_final, "S2: --tile False no debe emitirse")
+check("--seed" not in r_s2.prompt_final, "S2: sin seed no debe emitirse --seed")
+print("S2 OK ->", r_s2.prompt_final)
+
+# --- Caso T: seed compartida en multi-estilo — las N variantes deben llevar la MISMA seed ---
+cats_t = [CategoriaEstetica.FOTOREALISMO_RETRATO, CategoriaEstetica.CONCEPTUAL_FANTASIA, CategoriaEstetica.CINE]
+lote_t = regenerar_en_estilos(vision, cats_t)
+seeds_t = {v.parametros.seed for v in lote_t.values()}
+check(len(seeds_t) == 1, f"T: las N variantes deben compartir la misma seed, encontradas: {seeds_t}")
+check(None not in seeds_t, "T: la seed compartida generada automáticamente no debe ser None")
+print("T OK -> seed compartida:", seeds_t)
+
+# --- Caso T2: si el usuario fija una seed explícita, esa es la que se comparte ---
+lote_t2 = regenerar_en_estilos(vision, cats_t, OverridesTexto(seed=999))
+seeds_t2 = {v.parametros.seed for v in lote_t2.values()}
+check(seeds_t2 == {999}, f"T2: seed explícita del usuario debe propagarse a todas las variantes, encontradas: {seeds_t2}")
+print("T2 OK -> seed compartida:", seeds_t2)
+
+# --- Caso U: warning ruidoso de niji ya NO dispara en el caso default (solo stylize distinto de 100) ---
+r_u = construir_prompt(SolicitudPrompt(sujeto="Idolo pop anime", categoria=CategoriaEstetica.ANIME_MANGA))
+check(not any("no tienen interpolación nativa" in w for w in r_u.warnings), "U: warning ruidoso de niji no debe dispararse en el caso default (solo por stylize!=100)")
+print("U OK -> warnings:", r_u.warnings)
+
+# --- Caso U2: el warning de niji SÍ debe seguir avisando cuando hay raw/exp real (forzado vía ParametrosMJ) ---
+p_u2 = ParametrosMJ(v=ModeloMJ.NIJI_7, raw=True)
+check(any("no tienen interpolación nativa" in w for w in p_u2.warnings), "U2: con raw=True SÍ debe advertir sobre niji")
+print("U2 OK -> warnings:", p_u2.warnings)
+
+# --- Caso V: conteo_final refleja el cuerpo real (con medio_estilo/texto), distinto de conteo_palabras ---
+sujeto_largo_v = " ".join(["palabra"] * 120)
+r_v = construir_prompt(SolicitudPrompt(sujeto=sujeto_largo_v, categoria=CategoriaEstetica.CINE, texto_incrustado="HOLA"))
+check(r_v.conteo_palabras > 100, "V: conteo_palabras debe reflejar el total ANTES de truncar")
+check(r_v.conteo_final <= 100 + 20, f"V: conteo_final debe reflejar el cuerpo truncado + medio_estilo + texto: {r_v.conteo_final}")
+check(r_v.conteo_final != r_v.conteo_palabras, "V: conteo_final y conteo_palabras deben ser distintos cuando hubo truncamiento")
+print("V OK -> conteo_palabras:", r_v.conteo_palabras, "conteo_final:", r_v.conteo_final)
+
+# ═══════════════════════════════════════════════════════════
 # RESUMEN
 # ═══════════════════════════════════════════════════════════
 
@@ -282,5 +362,5 @@ if __name__ == "__main__":
             print(f"  - {f}")
         sys.exit(1)
     else:
-        print("✅ TODOS LOS TESTS PASARON (20/20)")
+        print("✅ TODOS LOS TESTS PASARON (30/30)")
         sys.exit(0)
