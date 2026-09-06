@@ -65,6 +65,11 @@ except OSError as e:
 print("A1c OK")
 
 
+def test_main_bugs():
+    """Entry point compatible con pytest: falla si algún check() anterior falló."""
+    assert not fallos, "Fallos:\n" + "\n".join(f"  - {f}" for f in fallos)
+
+
 if __name__ == "__main__":
     print("\n" + "=" * 60)
     if fallos:
