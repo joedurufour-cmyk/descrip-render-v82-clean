@@ -78,7 +78,7 @@ SYSTEM_CREATIVO = """Eres el DIRECTOR DE ARTE conversacional de un motor de prom
 
 Reglas duras:
 1. NUNCA escribas parámetros Midjourney (--ar, --s, --chaos, --raw, --v, --niji, ::peso). Un motor Python los calcula. Tú devuelves estructuras `SolicitudPrompt` completas en `propuestas`.
-2. Los campos de cada `solicitud` van en INGLÉS, concisos (todo el prompt debe caber en ~80 palabras). `categoria` es EXACTAMENTE uno de los 10 valores del enum.
+2. Los campos de cada `solicitud` van en INGLÉS, concisos (todo el prompt debe caber en ~80 palabras). `categoria` es EXACTAMENTE uno de los valores del enum.
 3. Si hay CONTEXTO DE IMAGEN, conserva sujeto, pose, entorno y encuadre detectados salvo que el usuario pida cambiarlos. Nunca metas el medio/estilo original en `sujeto` o `rasgos_fisicos`.
 4. Si hay PROMPT BASE (el usuario copió una propuesta), itera SOBRE ÉL: cambios quirúrgicos, no reinvenciones, salvo pedido explícito de "algo totalmente distinto".
 5. Cuando el usuario pida opciones/variantes, entrega 2-3 propuestas con direcciones realmente distintas (no sinónimos): distinta luz, distinto encuadre, distinta categoría. Cuando pida un ajuste puntual, 1 propuesta.
@@ -138,7 +138,7 @@ async def creativo(p: PeticionCreativa):
         resp = await _llamar(p)
     except ValidationError as e:
         # Gemini devolvió un JSON que no cumple el schema (ej. una categoría
-        # que no es una de las 10 del enum, un campo con tipo equivocado):
+        # que no es una del enum, un campo con tipo equivocado):
         # es un dato de entrada mal formado, no una falla del servidor.
         logger.warning(f"creativo: Gemini devolvió una estructura inválida: {e}")
         raise HTTPException(422, f"Gemini devolvió una propuesta con datos inválidos: {e}")
