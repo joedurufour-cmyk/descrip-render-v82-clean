@@ -8,7 +8,7 @@ Etapa 0 — VISIÓN (la hace Gemini, multimodal):
   Recibe UNA imagen (upload del usuario) y la describe en los mismos campos
   que usará el resto del pipeline: sujeto, rasgos, acción/estado, contexto,
   luz, paleta, medio/estilo original, lente/ángulo aparente, texto visible (OCR)
-  y una categoría estética sugerida de las 10 del contrato.
+  y una categoría estética sugerida de las del contrato (`CategoriaEstetica`).
   Salida forzada al schema `DescripcionVisual` — Gemini no puede inventar
   campos ni devolver prosa libre.
 
@@ -85,7 +85,7 @@ Reglas de descripción obligatorias:
    Ejemplo CORRECTO: sujeto_detectado="Mujer joven con cabello verde oscuro corto y ojos verdes grandes", medio_estilo_detectado="ilustración digital estilo anime".
 4. `texto_detectado_ocr`: transcribe EXACTAMENTE cualquier texto/tipografía visible en la imagen (letreros, etiquetas, camisetas). Si no hay texto visible, deja null. Nunca lo completes o corrijas — transcribe tal cual se ve, incluso si parece un error tipográfico en la imagen original.
 4b. ANTI-ALUCINACIÓN estricta en OCR: un logo, escudo, emblema o símbolo gráfico (ej. el logo de una marca, un ícono, una letra estilizada aislada sin más texto legible) NO cuenta como "texto" salvo que sea inequívocamente una palabra o frase real y completa que puedas leer con certeza absoluta. Si dudás, o si la cadena que creés ver no forma una palabra reconocible (fragmentos sin sentido, letras sueltas), DEJA null — no inventes ni "completes" caracteres. Este campo es especialmente sensible: cualquier valor no-null obliga al motor a instruir a Midjourney que renderice ese texto literal como letrero dentro de la imagen, así que un texto alucinado (basura de OCR sobre un logo, por ejemplo) arruina la composición completa del resultado. Es preferible dejar este campo vacío con más frecuencia que arriesgarse a alucinar.
-5. `categoria_sugerida`: elige EXACTAMENTE uno de los 10 valores del enum `CategoriaEstetica`, el que mejor describe el estilo VISUAL ACTUAL de la imagen (no el que el usuario podría querer después — esa decisión es del usuario vía override).
+5. `categoria_sugerida`: elige EXACTAMENTE uno de los valores del enum `CategoriaEstetica`, el que mejor describe el estilo VISUAL ACTUAL de la imagen (no el que el usuario podría querer después — esa decisión es del usuario vía override).
 6. `elementos_notables`: lista corta (máx. 5) de detalles secundarios que un director de arte querría preservar en una regeneración (ej. "cicatriz en la mejilla izquierda", "reflejo de neón en el pavimento mojado").
 
 Responde ÚNICAMENTE con el JSON del schema. Sin explicaciones, sin markdown, sin comentarios."""
@@ -214,7 +214,7 @@ SYSTEM_INSTRUCTION = """Eres el módulo de DECOMPOSICIÓN de un motor de prompts
 Reglas de descomposición obligatorias:
 1. Orden conceptual (aunque el JSON sea por campos, cada campo debe redactarse ya pensando en el orden final): sujeto+rasgos físicos → acción/estado → contexto/entorno → iluminación/atmósfera → medio/estilo artístico → lente/ángulo de cámara.
 2. Front-loading: el `sujeto` debe contener el elemento visualmente dominante primero. Nunca antepongas un detalle menor (ej. "unas botas gastadas...") al sujeto principal.
-3. Clasifica `categoria` eligiendo EXACTAMENTE uno de los 10 valores del enum — no inventes categorías nuevas.
+3. Clasifica `categoria` eligiendo EXACTAMENTE uno de los valores del enum — no inventes categorías nuevas.
 4. Si el usuario pide anime/manga/estilo japonés, usa la categoría anime_manga_ilustracion_asiatica y dejas `forzar_v8_2_en_anime=false` salvo que el usuario pida explícitamente permanecer en V8.1 base.
 5. Si el usuario pide texto/tipografía/letrero dentro de la imagen, coloca EXCLUSIVAMENTE la frase corta (2-4 palabras, sin comillas) en `texto_incrustado`. Nunca la insertes también en otro campo.
 6. Mantén cada campo conciso (el motor limita el total a ~70 palabras antes de degradar por "Prompt Shortener"); no repitas adjetivos.

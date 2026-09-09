@@ -25,6 +25,8 @@ from mj_engine import (
     construir_variante_estilo_original,
     categorias_vecinas,
     VECINOS_ESTETICOS,
+    PERFILES,
+    DESCRIPTOR_ESTILO,
 )
 
 fallos = []
@@ -430,6 +432,36 @@ r_z2 = construir_prompt(sol_z2)
 check("teal and magenta neon" in r_z2.prompt_final, "Z2: paleta heredada de visión debe llegar al prompt final")
 print("Z2 OK ->", r_z2.prompt_final)
 
+# --- Caso AA: expansión de estilos (comic occidental, abstracto, figura PVC/
+# resina, figura de acción realista) — cada categoría nueva tiene perfil,
+# descriptor y entrada completa (todas las demás) en VECINOS_ESTETICOS, y
+# construir_prompt() las procesa igual que a las 10 originales ---
+categorias_nuevas = [
+    CategoriaEstetica.COMIC_OCCIDENTAL,
+    CategoriaEstetica.ABSTRACTO,
+    CategoriaEstetica.FIGURA_PVC_RESINA,
+    CategoriaEstetica.FIGURA_ACCION_REALISTA,
+]
+todas_categorias = set(CategoriaEstetica)
+for cat in categorias_nuevas:
+    check(cat in PERFILES, f"AA: {cat.value} debe tener PerfilEstetico")
+    check(cat in DESCRIPTOR_ESTILO, f"AA: {cat.value} debe tener DESCRIPTOR_ESTILO")
+    vecinas_cat = set(VECINOS_ESTETICOS.get(cat, []))
+    check(vecinas_cat == todas_categorias - {cat}, f"AA: VECINOS_ESTETICOS[{cat.value}] debe listar TODAS las demás categorías exactamente una vez")
+
+r_aa = construir_prompt(SolicitudPrompt(
+    sujeto="Figura de personaje robótico articulado",
+    categoria=CategoriaEstetica.FIGURA_ACCION_REALISTA,
+))
+check(DESCRIPTOR_ESTILO[CategoriaEstetica.FIGURA_ACCION_REALISTA] in r_aa.prompt_final, "AA: el descriptor de la categoría nueva debe llegar al prompt final")
+check("--raw" in r_aa.prompt_final, "AA: figura_accion_realista tiene raw_obligatorio=True, debe forzar --raw")
+print("AA OK ->", r_aa.prompt_final)
+
+vecinas_aa = categorias_vecinas(CategoriaEstetica.FIGURA_PVC_RESINA, 4)
+check(vecinas_aa[0] == CategoriaEstetica.FIGURA_PVC_RESINA, "AA: categorias_vecinas también debe funcionar con una categoría nueva como base")
+check(len(vecinas_aa) == 4 and len(set(vecinas_aa)) == 4, "AA: 4 estilos únicos también para una categoría nueva")
+print("AA2 OK ->", [c.value for c in vecinas_aa])
+
 # ═══════════════════════════════════════════════════════════
 # RESUMEN
 # ═══════════════════════════════════════════════════════════
@@ -447,5 +479,5 @@ if __name__ == "__main__":
             print(f"  - {f}")
         sys.exit(1)
     else:
-        print("✅ TODOS LOS TESTS PASARON (37/37)")
+        print("✅ TODOS LOS TESTS PASARON")
         sys.exit(0)

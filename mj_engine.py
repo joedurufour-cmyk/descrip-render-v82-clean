@@ -53,6 +53,10 @@ class CategoriaEstetica(str, Enum):
     CYBERPUNK_SCIFI = "cyberpunk_scifi_denso"
     EXPERIMENTAL_SURREALISMO = "experimental_surrealismo_vanguardista"
     VINTAGE_ANALOGICA = "fotografia_vintage_analogica"
+    COMIC_OCCIDENTAL = "comic_occidental_tira_comica"
+    ABSTRACTO = "arte_abstracto_no_figurativo"
+    FIGURA_PVC_RESINA = "figura_coleccionable_pvc_resina"
+    FIGURA_ACCION_REALISTA = "figura_accion_realista_toy_photography"
 
 
 # ═══════════════════════════════════════════════════════════
@@ -315,6 +319,39 @@ PERFILES: dict[CategoriaEstetica, "PerfilEstetico"] = {
         nota_tecnica="raw obligatorio: sin él, V8.2 'limpia' grano/fugas de luz/"
                      "desaturación que son el objetivo estético.",
     ),
+    CategoriaEstetica.COMIC_OCCIDENTAL: PerfilEstetico(
+        categoria=CategoriaEstetica.COMIC_OCCIDENTAL,
+        stylize_min=200, stylize_max=400,
+        raw_obligatorio=False,
+        nota_tecnica="Trazo de tinta grueso y color plano tipo tira cómica/newspaper "
+                     "strip (Peanuts, Calvin & Hobbes); stylize moderado mantiene el "
+                     "look simple sin derivar a pintura digital detallada.",
+    ),
+    CategoriaEstetica.ABSTRACTO: PerfilEstetico(
+        categoria=CategoriaEstetica.ABSTRACTO,
+        stylize_min=650, stylize_max=1000,
+        raw_obligatorio=False,
+        weird_sugerido=(200, 600),
+        nota_tecnica="No-figurativo por definición: stylize alto le da a V8.2 libertad "
+                     "total para priorizar composición/color sobre cualquier sujeto "
+                     "literal; weird moderado ayuda a romper la simetría por defecto.",
+    ),
+    CategoriaEstetica.FIGURA_PVC_RESINA: PerfilEstetico(
+        categoria=CategoriaEstetica.FIGURA_PVC_RESINA,
+        stylize_min=50, stylize_max=200,
+        raw_obligatorio=True,
+        nota_tecnica="raw obligatorio: es un render de PRODUCTO (figura de garage kit "
+                     "en resina/PVC sobre peana), no una ilustración — sin raw, V8.2 "
+                     "tiende a pintar la superficie en vez de mantenerla plástico/resina.",
+    ),
+    CategoriaEstetica.FIGURA_ACCION_REALISTA: PerfilEstetico(
+        categoria=CategoriaEstetica.FIGURA_ACCION_REALISTA,
+        stylize_min=50, stylize_max=200,
+        raw_obligatorio=True,
+        nota_tecnica="Mismo criterio que figura PVC: raw obligatorio para preservar "
+                     "material de juguete/articulaciones visibles en vez de derivar a "
+                     "un personaje real fotográfico.",
+    ),
 }
 
 
@@ -336,6 +373,10 @@ DESCRIPTOR_ESTILO: dict[CategoriaEstetica, str] = {
     CategoriaEstetica.CYBERPUNK_SCIFI: "cyberpunk science fiction illustration, neon-lit dystopian atmosphere",
     CategoriaEstetica.EXPERIMENTAL_SURREALISMO: "surreal experimental art, avant-garde composition",
     CategoriaEstetica.VINTAGE_ANALOGICA: "vintage analog film photography, grainy retro aesthetic",
+    CategoriaEstetica.COMIC_OCCIDENTAL: "western comic strip illustration, bold ink outlines, flat cel-shaded colors, newspaper comic panel style",
+    CategoriaEstetica.ABSTRACTO: "abstract non-representational art, expressive shapes and color fields, no literal figure",
+    CategoriaEstetica.FIGURA_PVC_RESINA: "1/7 scale PVC collectible figure, resin garage kit, glossy plastic material, studio product photography on a display base",
+    CategoriaEstetica.FIGURA_ACCION_REALISTA: "realistic articulated action figure, visible joints, collectible toy material, macro toy photography",
 }
 
 
@@ -350,53 +391,101 @@ DESCRIPTOR_ESTILO: dict[CategoriaEstetica, str] = {
 VECINOS_ESTETICOS: dict[CategoriaEstetica, list[CategoriaEstetica]] = {
     CategoriaEstetica.FOTOREALISMO_RETRATO: [
         CategoriaEstetica.CINE, CategoriaEstetica.EDITORIAL_MODA, CategoriaEstetica.VINTAGE_ANALOGICA,
-        CategoriaEstetica.MODELADO_3D_CGI, CategoriaEstetica.PINTURA_CLASICA, CategoriaEstetica.CONCEPTUAL_FANTASIA,
-        CategoriaEstetica.CYBERPUNK_SCIFI, CategoriaEstetica.ANIME_MANGA, CategoriaEstetica.EXPERIMENTAL_SURREALISMO,
+        CategoriaEstetica.FIGURA_PVC_RESINA, CategoriaEstetica.FIGURA_ACCION_REALISTA, CategoriaEstetica.MODELADO_3D_CGI,
+        CategoriaEstetica.PINTURA_CLASICA, CategoriaEstetica.CONCEPTUAL_FANTASIA, CategoriaEstetica.CYBERPUNK_SCIFI,
+        CategoriaEstetica.ANIME_MANGA, CategoriaEstetica.COMIC_OCCIDENTAL, CategoriaEstetica.EXPERIMENTAL_SURREALISMO,
+        CategoriaEstetica.ABSTRACTO,
     ],
     CategoriaEstetica.CINE: [
         CategoriaEstetica.FOTOREALISMO_RETRATO, CategoriaEstetica.EDITORIAL_MODA, CategoriaEstetica.CYBERPUNK_SCIFI,
         CategoriaEstetica.VINTAGE_ANALOGICA, CategoriaEstetica.CONCEPTUAL_FANTASIA, CategoriaEstetica.MODELADO_3D_CGI,
-        CategoriaEstetica.PINTURA_CLASICA, CategoriaEstetica.EXPERIMENTAL_SURREALISMO, CategoriaEstetica.ANIME_MANGA,
+        CategoriaEstetica.FIGURA_PVC_RESINA, CategoriaEstetica.FIGURA_ACCION_REALISTA, CategoriaEstetica.PINTURA_CLASICA,
+        CategoriaEstetica.EXPERIMENTAL_SURREALISMO, CategoriaEstetica.ANIME_MANGA, CategoriaEstetica.COMIC_OCCIDENTAL,
+        CategoriaEstetica.ABSTRACTO,
     ],
     CategoriaEstetica.ANIME_MANGA: [
-        CategoriaEstetica.CONCEPTUAL_FANTASIA, CategoriaEstetica.PINTURA_CLASICA, CategoriaEstetica.EXPERIMENTAL_SURREALISMO,
+        CategoriaEstetica.COMIC_OCCIDENTAL, CategoriaEstetica.FIGURA_PVC_RESINA, CategoriaEstetica.CONCEPTUAL_FANTASIA,
+        CategoriaEstetica.PINTURA_CLASICA, CategoriaEstetica.EXPERIMENTAL_SURREALISMO, CategoriaEstetica.FIGURA_ACCION_REALISTA,
         CategoriaEstetica.CYBERPUNK_SCIFI, CategoriaEstetica.MODELADO_3D_CGI, CategoriaEstetica.EDITORIAL_MODA,
         CategoriaEstetica.CINE, CategoriaEstetica.VINTAGE_ANALOGICA, CategoriaEstetica.FOTOREALISMO_RETRATO,
+        CategoriaEstetica.ABSTRACTO,
     ],
     CategoriaEstetica.PINTURA_CLASICA: [
-        CategoriaEstetica.CONCEPTUAL_FANTASIA, CategoriaEstetica.ANIME_MANGA, CategoriaEstetica.EXPERIMENTAL_SURREALISMO,
-        CategoriaEstetica.VINTAGE_ANALOGICA, CategoriaEstetica.EDITORIAL_MODA, CategoriaEstetica.CINE,
-        CategoriaEstetica.FOTOREALISMO_RETRATO, CategoriaEstetica.MODELADO_3D_CGI, CategoriaEstetica.CYBERPUNK_SCIFI,
+        CategoriaEstetica.CONCEPTUAL_FANTASIA, CategoriaEstetica.EXPERIMENTAL_SURREALISMO, CategoriaEstetica.ABSTRACTO,
+        CategoriaEstetica.ANIME_MANGA, CategoriaEstetica.COMIC_OCCIDENTAL, CategoriaEstetica.VINTAGE_ANALOGICA,
+        CategoriaEstetica.EDITORIAL_MODA, CategoriaEstetica.CINE, CategoriaEstetica.FOTOREALISMO_RETRATO,
+        CategoriaEstetica.MODELADO_3D_CGI, CategoriaEstetica.CYBERPUNK_SCIFI, CategoriaEstetica.FIGURA_PVC_RESINA,
+        CategoriaEstetica.FIGURA_ACCION_REALISTA,
     ],
     CategoriaEstetica.CONCEPTUAL_FANTASIA: [
-        CategoriaEstetica.PINTURA_CLASICA, CategoriaEstetica.EXPERIMENTAL_SURREALISMO, CategoriaEstetica.ANIME_MANGA,
-        CategoriaEstetica.CYBERPUNK_SCIFI, CategoriaEstetica.MODELADO_3D_CGI, CategoriaEstetica.CINE,
-        CategoriaEstetica.EDITORIAL_MODA, CategoriaEstetica.VINTAGE_ANALOGICA, CategoriaEstetica.FOTOREALISMO_RETRATO,
+        CategoriaEstetica.PINTURA_CLASICA, CategoriaEstetica.EXPERIMENTAL_SURREALISMO, CategoriaEstetica.ABSTRACTO,
+        CategoriaEstetica.ANIME_MANGA, CategoriaEstetica.COMIC_OCCIDENTAL, CategoriaEstetica.CYBERPUNK_SCIFI,
+        CategoriaEstetica.MODELADO_3D_CGI, CategoriaEstetica.FIGURA_PVC_RESINA, CategoriaEstetica.FIGURA_ACCION_REALISTA,
+        CategoriaEstetica.CINE, CategoriaEstetica.EDITORIAL_MODA, CategoriaEstetica.VINTAGE_ANALOGICA,
+        CategoriaEstetica.FOTOREALISMO_RETRATO,
     ],
     CategoriaEstetica.EDITORIAL_MODA: [
         CategoriaEstetica.CINE, CategoriaEstetica.FOTOREALISMO_RETRATO, CategoriaEstetica.VINTAGE_ANALOGICA,
         CategoriaEstetica.PINTURA_CLASICA, CategoriaEstetica.CONCEPTUAL_FANTASIA, CategoriaEstetica.MODELADO_3D_CGI,
-        CategoriaEstetica.CYBERPUNK_SCIFI, CategoriaEstetica.ANIME_MANGA, CategoriaEstetica.EXPERIMENTAL_SURREALISMO,
+        CategoriaEstetica.FIGURA_PVC_RESINA, CategoriaEstetica.FIGURA_ACCION_REALISTA, CategoriaEstetica.CYBERPUNK_SCIFI,
+        CategoriaEstetica.ANIME_MANGA, CategoriaEstetica.EXPERIMENTAL_SURREALISMO, CategoriaEstetica.COMIC_OCCIDENTAL,
+        CategoriaEstetica.ABSTRACTO,
     ],
     CategoriaEstetica.MODELADO_3D_CGI: [
-        CategoriaEstetica.CYBERPUNK_SCIFI, CategoriaEstetica.CONCEPTUAL_FANTASIA, CategoriaEstetica.FOTOREALISMO_RETRATO,
-        CategoriaEstetica.CINE, CategoriaEstetica.ANIME_MANGA, CategoriaEstetica.EDITORIAL_MODA,
-        CategoriaEstetica.EXPERIMENTAL_SURREALISMO, CategoriaEstetica.PINTURA_CLASICA, CategoriaEstetica.VINTAGE_ANALOGICA,
+        CategoriaEstetica.FIGURA_PVC_RESINA, CategoriaEstetica.FIGURA_ACCION_REALISTA, CategoriaEstetica.CYBERPUNK_SCIFI,
+        CategoriaEstetica.CONCEPTUAL_FANTASIA, CategoriaEstetica.FOTOREALISMO_RETRATO, CategoriaEstetica.CINE,
+        CategoriaEstetica.ANIME_MANGA, CategoriaEstetica.EDITORIAL_MODA, CategoriaEstetica.EXPERIMENTAL_SURREALISMO,
+        CategoriaEstetica.PINTURA_CLASICA, CategoriaEstetica.VINTAGE_ANALOGICA, CategoriaEstetica.COMIC_OCCIDENTAL,
+        CategoriaEstetica.ABSTRACTO,
     ],
     CategoriaEstetica.CYBERPUNK_SCIFI: [
-        CategoriaEstetica.MODELADO_3D_CGI, CategoriaEstetica.CONCEPTUAL_FANTASIA, CategoriaEstetica.CINE,
-        CategoriaEstetica.ANIME_MANGA, CategoriaEstetica.EXPERIMENTAL_SURREALISMO, CategoriaEstetica.EDITORIAL_MODA,
-        CategoriaEstetica.FOTOREALISMO_RETRATO, CategoriaEstetica.PINTURA_CLASICA, CategoriaEstetica.VINTAGE_ANALOGICA,
+        CategoriaEstetica.MODELADO_3D_CGI, CategoriaEstetica.FIGURA_ACCION_REALISTA, CategoriaEstetica.FIGURA_PVC_RESINA,
+        CategoriaEstetica.CONCEPTUAL_FANTASIA, CategoriaEstetica.CINE, CategoriaEstetica.ANIME_MANGA,
+        CategoriaEstetica.EXPERIMENTAL_SURREALISMO, CategoriaEstetica.EDITORIAL_MODA, CategoriaEstetica.FOTOREALISMO_RETRATO,
+        CategoriaEstetica.PINTURA_CLASICA, CategoriaEstetica.VINTAGE_ANALOGICA, CategoriaEstetica.COMIC_OCCIDENTAL,
+        CategoriaEstetica.ABSTRACTO,
     ],
     CategoriaEstetica.EXPERIMENTAL_SURREALISMO: [
-        CategoriaEstetica.CONCEPTUAL_FANTASIA, CategoriaEstetica.PINTURA_CLASICA, CategoriaEstetica.ANIME_MANGA,
-        CategoriaEstetica.CYBERPUNK_SCIFI, CategoriaEstetica.MODELADO_3D_CGI, CategoriaEstetica.CINE,
-        CategoriaEstetica.EDITORIAL_MODA, CategoriaEstetica.FOTOREALISMO_RETRATO, CategoriaEstetica.VINTAGE_ANALOGICA,
+        CategoriaEstetica.ABSTRACTO, CategoriaEstetica.CONCEPTUAL_FANTASIA, CategoriaEstetica.PINTURA_CLASICA,
+        CategoriaEstetica.ANIME_MANGA, CategoriaEstetica.COMIC_OCCIDENTAL, CategoriaEstetica.CYBERPUNK_SCIFI,
+        CategoriaEstetica.MODELADO_3D_CGI, CategoriaEstetica.CINE, CategoriaEstetica.EDITORIAL_MODA,
+        CategoriaEstetica.FOTOREALISMO_RETRATO, CategoriaEstetica.VINTAGE_ANALOGICA, CategoriaEstetica.FIGURA_PVC_RESINA,
+        CategoriaEstetica.FIGURA_ACCION_REALISTA,
     ],
     CategoriaEstetica.VINTAGE_ANALOGICA: [
         CategoriaEstetica.FOTOREALISMO_RETRATO, CategoriaEstetica.EDITORIAL_MODA, CategoriaEstetica.CINE,
-        CategoriaEstetica.PINTURA_CLASICA, CategoriaEstetica.CONCEPTUAL_FANTASIA, CategoriaEstetica.ANIME_MANGA,
-        CategoriaEstetica.MODELADO_3D_CGI, CategoriaEstetica.CYBERPUNK_SCIFI, CategoriaEstetica.EXPERIMENTAL_SURREALISMO,
+        CategoriaEstetica.COMIC_OCCIDENTAL, CategoriaEstetica.PINTURA_CLASICA, CategoriaEstetica.CONCEPTUAL_FANTASIA,
+        CategoriaEstetica.ANIME_MANGA, CategoriaEstetica.MODELADO_3D_CGI, CategoriaEstetica.CYBERPUNK_SCIFI,
+        CategoriaEstetica.EXPERIMENTAL_SURREALISMO, CategoriaEstetica.ABSTRACTO, CategoriaEstetica.FIGURA_PVC_RESINA,
+        CategoriaEstetica.FIGURA_ACCION_REALISTA,
+    ],
+    CategoriaEstetica.COMIC_OCCIDENTAL: [
+        CategoriaEstetica.ANIME_MANGA, CategoriaEstetica.CONCEPTUAL_FANTASIA, CategoriaEstetica.PINTURA_CLASICA,
+        CategoriaEstetica.VINTAGE_ANALOGICA, CategoriaEstetica.EXPERIMENTAL_SURREALISMO, CategoriaEstetica.ABSTRACTO,
+        CategoriaEstetica.EDITORIAL_MODA, CategoriaEstetica.CINE, CategoriaEstetica.FOTOREALISMO_RETRATO,
+        CategoriaEstetica.MODELADO_3D_CGI, CategoriaEstetica.CYBERPUNK_SCIFI, CategoriaEstetica.FIGURA_PVC_RESINA,
+        CategoriaEstetica.FIGURA_ACCION_REALISTA,
+    ],
+    CategoriaEstetica.ABSTRACTO: [
+        CategoriaEstetica.EXPERIMENTAL_SURREALISMO, CategoriaEstetica.CONCEPTUAL_FANTASIA, CategoriaEstetica.PINTURA_CLASICA,
+        CategoriaEstetica.ANIME_MANGA, CategoriaEstetica.COMIC_OCCIDENTAL, CategoriaEstetica.CYBERPUNK_SCIFI,
+        CategoriaEstetica.MODELADO_3D_CGI, CategoriaEstetica.CINE, CategoriaEstetica.EDITORIAL_MODA,
+        CategoriaEstetica.VINTAGE_ANALOGICA, CategoriaEstetica.FOTOREALISMO_RETRATO, CategoriaEstetica.FIGURA_PVC_RESINA,
+        CategoriaEstetica.FIGURA_ACCION_REALISTA,
+    ],
+    CategoriaEstetica.FIGURA_PVC_RESINA: [
+        CategoriaEstetica.FIGURA_ACCION_REALISTA, CategoriaEstetica.MODELADO_3D_CGI, CategoriaEstetica.ANIME_MANGA,
+        CategoriaEstetica.CYBERPUNK_SCIFI, CategoriaEstetica.FOTOREALISMO_RETRATO, CategoriaEstetica.CONCEPTUAL_FANTASIA,
+        CategoriaEstetica.EDITORIAL_MODA, CategoriaEstetica.CINE, CategoriaEstetica.VINTAGE_ANALOGICA,
+        CategoriaEstetica.PINTURA_CLASICA, CategoriaEstetica.EXPERIMENTAL_SURREALISMO, CategoriaEstetica.COMIC_OCCIDENTAL,
+        CategoriaEstetica.ABSTRACTO,
+    ],
+    CategoriaEstetica.FIGURA_ACCION_REALISTA: [
+        CategoriaEstetica.FIGURA_PVC_RESINA, CategoriaEstetica.CYBERPUNK_SCIFI, CategoriaEstetica.MODELADO_3D_CGI,
+        CategoriaEstetica.FOTOREALISMO_RETRATO, CategoriaEstetica.CONCEPTUAL_FANTASIA, CategoriaEstetica.ANIME_MANGA,
+        CategoriaEstetica.EDITORIAL_MODA, CategoriaEstetica.CINE, CategoriaEstetica.VINTAGE_ANALOGICA,
+        CategoriaEstetica.PINTURA_CLASICA, CategoriaEstetica.EXPERIMENTAL_SURREALISMO, CategoriaEstetica.COMIC_OCCIDENTAL,
+        CategoriaEstetica.ABSTRACTO,
     ],
 }
 
